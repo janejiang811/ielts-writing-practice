@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f7f5f0">
+<title>IELTS Writing Lab｜观点表达训练库</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand-mark">W</div>
+  <div><div class="brand">IELTS Writing Lab</div><div class="subbrand">观点表达 · 语境学习 · 论证训练</div></div>
+  <button id="resetProgress" class="text-button" title="清除本机学习记录">重置记录</button>
+</header>
+<main>
+  <section class="intro">
+    <p class="eyebrow">YOUR PERSONAL WRITING TOOLKIT</p>
+    <h1>把观点表达，变成<br><em>真正会用的英语。</em></h1>
+    <p class="intro-copy">先回忆表达，再观察例句，最后学习如何把观点发展成论证。学习记录保存在当前浏览器中。</p>
+  </section>
+  <section class="stats" aria-label="学习统计">
+    <div class="stat"><span id="totalCount">24</span><small>本组表达</small></div>
+    <div class="stat"><span id="knownCount">0</span><small>已掌握</small></div>
+    <div class="stat"><span id="reviewCount">0</span><small>待复习</small></div>
+    <div class="stat"><span id="progressPercent">0%</span><small>掌握进度</small></div>
+  </section>
+  <section class="filters">
+    <label>主题<select id="categoryFilter"><option value="all">全部主题</option></select></label>
+    <label>表达类型<select id="typeFilter"><option value="all">全部类型</option></select></label>
+    <label class="search-label">搜索<input id="searchInput" type="search" placeholder="输入英文或中文…"></label>
+  </section>
+  <section class="study-layout">
+    <div class="study-main">
+      <div class="card-head"><span id="cardCounter">01 / 24</span><span id="cardCategory" class="pill">教育</span><button id="shuffleBtn" class="icon-button" title="随机抽取">⤨ 随机</button></div>
+      <article id="flashcard" class="flashcard">
+        <div class="card-topline"><span id="cardType">观点</span><span class="tiny-dot"></span><span>核心表达</span></div>
+        <h2 id="expression">promote educational equality</h2>
+        <div id="meaningArea" class="meaning-area hidden"><div class="meaning-label">中文释义</div><p id="meaning">促进教育公平</p></div>
+        <button id="revealBtn" class="reveal-button">显示释义与例句 <span>↓</span></button>
+        <div id="details" class="details hidden">
+          <div class="example-block"><div class="section-label">IN CONTEXT · 例句</div><p id="example" class="english-example"></p><p id="exampleTranslation" class="translation"></p></div>
+          <div class="extension-block"><div class="section-label">BUILD THE ARGUMENT · 论证扩展</div><p id="extension" class="english-example"></p><p id="extensionTranslation" class="translation"></p></div>
+        </div>
+      </article>
+      <div class="rating-row"><span>这条表达你掌握得如何？</span><div class="rating-buttons"><button data-rating="again" class="rating again">需要复习</button><button data-rating="hard" class="rating hard">有点模糊</button><button data-rating="known" class="rating known">已经掌握 ✓</button></div></div>
+      <div class="navigation"><button id="prevBtn" class="secondary-button">← 上一条</button><button id="nextBtn" class="primary-button">下一条 →</button></div>
+      <p id="emptyState" class="empty hidden">没有找到符合条件的表达。试试更换主题或搜索词。</p>
+    </div>
+    <aside class="side-panel">
+      <div class="panel-heading"><span class="panel-icon">✳</span><div><h3>学习建议</h3><p>不要只背中文翻译</p></div></div>
+      <ol class="study-steps"><li><b>先回忆</b><span>读英文表达，试着说出中文含义。</span></li><li><b>看语境</b><span>观察它与什么主语、动词和论证场景搭配。</span></li><li><b>做迁移</b><span>想一个不同于例句的题目，自己造句。</span></li></ol>
+      <div class="mini-divider"></div>
+      <h3 class="list-title">当前筛选结果</h3><div id="resultList" class="result-list"></div>
+      <button id="reviewOnlyBtn" class="outline-button">只复习待复习表达</button>
+      <button id="showAllBtn" class="plain-button">显示全部表达</button>
+    </aside>
+  </section>
+  <section class="note"><strong>关于材料</strong><p>主题与核心搭配参考你提供的《浓缩版观点库》。本试用版先收录 24 条示范表达；英文例句、翻译与论证扩展为本项目新编，用于展示如何补足原材料缺少语境的问题。后续可以继续扩充到原文件的全部分类与表达。</p></section>
+</main>
+<footer>Made for deliberate practice · GitHub Pages ready</footer>
+<script src="app.js"></script>
+</body></html>
