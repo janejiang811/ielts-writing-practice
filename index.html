@@ -16,7 +16,7 @@
 <main id="top">
   <section class="hero">
     <div class="hero-copy"><p class="eyebrow">YOUR IELTS WRITING TOOLKIT</p><h1>别只是看懂表达。<br><em>练到需要时能想起来。</em></h1><p class="hero-desc">先回忆，再看语境；先自己作答，再判断掌握程度。把观点、原因和结果，逐渐变成写作时能主动调用的语言。</p>
-      <div class="hero-pills"><span>600 条原资料表达</span><span>12 个话题主题</span><span>到期复习</span></div>
+      <div class="hero-pills"><span>600 条写作表达</span><span>12 个话题主题</span><span>到期复习</span><span>新旧交错 · 四次回忆掌握</span></div>
     </div>
     <div class="daily-card">
       <div class="daily-head"><span class="small-cap">TODAY'S PLAN</span><span class="calendar-icon">✳</span></div>
@@ -34,7 +34,7 @@
     <div class="stat-card"><span class="stat-icon peach">↗</span><div><small>总进度</small><strong id="overallProgress">0%</strong><span id="reviewedCount">0 条有记录</span></div></div>
   </section>
 
-  <section class="workspace">
+  <section id="workspaceSection" class="workspace">
     <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">建议每次 5–15 条，优先复习已经快忘掉的表达。</p></div>
     <nav class="mode-tabs" aria-label="学习模式">
       <button class="mode-tab active" data-mode="learn"><span>01</span>新表达</button>
@@ -65,6 +65,7 @@
 
         <article id="studyCard" class="study-card hidden">
           <div class="card-kicker"><span id="cardCategory" class="category-chip">教育</span><span id="cardType" class="type-label">观点类</span><span id="cardSource" class="source-label">原资料表达</span></div>
+          <p id="masteryProgress" class="mastery-progress">连续掌握进度：0 / 4 次顺利回忆</p>
           <p id="promptLabel" class="prompt-label">中文提示 · 请回忆英文</p>
           <h2 id="promptText" class="prompt-text">提高教育公平性</h2>
           <div id="clozeBox" class="cloze-box hidden"><span class="cloze-cap">IN CONTEXT · 语境线索</span><p id="clozeSentence"></p></div>
@@ -79,6 +80,7 @@
             <div class="related-row"><span>这条表达属于</span><span id="roleTag" class="role-tag"></span></div>
           </div>
           <button id="revealBtn" class="reveal-button">显示答案与例句 <span>↓</span></button>
+          <div id="typingNextArea" class="typing-next-area hidden"><p id="typingRoundNote">拼写判定已记录；继续保持主动回忆。</p><button id="typingNextBtn" class="primary-button">记录本次结果，下一条 →</button></div>
           <div id="ratingArea" class="rating-area hidden"><p>你刚才的回忆效果如何？</p><div class="rating-buttons"><button data-rating="again" class="rating-button again"><b>×</b><span>没想起来</span><small>稍后再练</small></button><button data-rating="hard" class="rating-button hard"><b>~</b><span>有点模糊</span><small>明天再看</small></button><button data-rating="known" class="rating-button known"><b>✓</b><span>顺利想起</span><small>延长间隔</small></button></div></div>
         </article>
 
@@ -86,15 +88,25 @@
         <div class="card-navigation"><button id="prevBtn" class="nav-button" disabled>← 上一条</button><div class="queue-progress"><span id="queueProgress"></span></div><button id="nextBtn" class="nav-button" disabled>下一条 →</button></div>
       </section>
     </div>
+
+    <section id="librarySection" class="library-section hidden">
+      <div class="library-head"><div><p class="eyebrow">THE EXPRESSION LIBRARY</p><h2>按主题建立你的观点库</h2><p>先选择主题进入独立分区。每个主题显示总表达数、已学习数与已掌握数；进入后还可按表达用途继续整理。</p></div><div class="library-count"><strong id="libraryCount">600</strong><span>条表达</span></div></div>
+      <div class="library-toolbar">
+        <label>主题<select id="libraryCategoryFilter"><option value="all">全部主题</option></select></label>
+        <label>表达用途<select id="libraryTypeFilter"><option value="all">全部用途</option></select></label>
+        <label class="library-search">搜索表达<input id="librarySearchInput" type="search" placeholder="输入中文或英文关键词"></label>
+        <button id="libraryResetBtn" class="plain-button">重置</button>
+      </div>
+      <div id="categoryGrid" class="category-grid" aria-label="主题分区"></div>
+      <div id="libraryResultsHead" class="library-results-head hidden"><div><p class="eyebrow">TOPIC CONTENTS</p><h3 id="libraryResultsTitle">教育类观点表达</h3><p id="libraryResultsNote">本主题表达与掌握进度</p></div><button id="backToTopicsBtn" class="plain-button">返回主题总览 ↑</button></div>
+      <div id="typeBreakdown" class="type-breakdown hidden"></div>
+      <div id="libraryList" class="library-list hidden"></div>
+      <div id="libraryEmpty" class="library-empty hidden">当前筛选下没有匹配的表达。可以更换关键词，或返回主题总览。</div>
+      <div id="libraryPagination" class="library-pagination hidden"><span id="libraryPageLabel">显示第 1–30 条</span><div><button id="libraryPrev" class="secondary-button" disabled>上一页</button><button id="libraryNext" class="secondary-button">下一页</button></div></div>
+    </section>
   </section>
 
-  <section id="librarySection" class="library-section hidden">
-    <div class="library-head"><div><p class="eyebrow">THE EXPRESSION LIBRARY</p><h2>你的完整观点库</h2><p>600 条原资料表达，按主题与论证功能整理。点击一条即可单独练习。</p></div><div class="library-count"><strong id="libraryCount">600</strong><span>条表达</span></div></div>
-    <div id="libraryList" class="library-list"></div>
-    <div class="library-pagination"><span id="libraryPageLabel">显示第 1–30 条</span><div><button id="libraryPrev" class="secondary-button" disabled>上一页</button><button id="libraryNext" class="secondary-button">下一页</button></div></div>
-  </section>
-
-  <section class="source-note"><div class="source-icon">i</div><div><b>词库与例句说明</b><p>中文释义与原始英文表达取自你上传的《浓缩版观点库（短时间备考同学适用）》。完整论证句按原资料保留；其他条目保留原短语，并补充不同句型的语境练习。补充例句是用于训练语法位置的编辑内容，不是 PDF 原文。原资料中的表达仍需根据具体题目和语境判断是否适用，不建议机械套用。</p></div></section>
+  <section class="source-note"><div class="source-icon">i</div><div><b>词库与例句说明</b><p>中文释义与核心表达以你上传的《浓缩版观点库（短时间备考同学适用）》为基础；少数明显不自然的英文搭配已做轻度修订。所有例句均为本轮编辑整理的语境练习，并非声称来自 PDF 原文或真实语料库。表达是否适用仍需结合具体题目的对象、因果关系与语境判断，不建议机械套用。</p></div></section>
 </main>
 <footer><span>IELTS WRITING LAB</span><span>主动回忆 · 语境学习 · 间隔复习</span></footer>
 <script src="app.js"></script>
