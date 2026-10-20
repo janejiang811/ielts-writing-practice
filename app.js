@@ -8,10 +8,12 @@ const INTERVAL_DAYS = [0.25,1,3,7,14,30];
 const SESSION_LIMITS = [5,10,15,20,30];
 function validBatchSize(n){const size=Number(n);return SESSION_LIMITS.includes(size)?size:10;}
 let entries = [];
-let state = { progress:{}, settings:{dailyGoal:10,reviewBatchSize:10}, dailyStats:{} };
+let state = { progress:{}, settings:{dailyGoal:10,reviewBatchSize:10}, dailyStats:{}, activeBatches:{} };
 let mode = 'idle';
 let queue = [];
 let cursor = 0;
+let sessionBatch = null; // fixed membership until every entry has passed one spelling check
+let sessionIsSingle = false; // ad-hoc library practice must not replace a saved group
 let revealed = false;
 let checked = false;
 let typedCorrect = false;
@@ -85,8 +87,13 @@ function updateStats(){
   updateReviewPlanSummary();
 }
 function updateReviewPlanSummary(){
+  const active=state.activeBatches?.review;
+  if(active?.ids?.length && active.passedIds?.length<active.ids.length){
+    $('reviewBatchHint').textContent=`当前组固定 ${active.ids.length} 条 · 已通过 ${active.passedIds.length} 条，全部正确后才能进入下一组`;
+    return;
+  }
   const n=getDue(getFiltered()).length, batch=validBatchSize(state.settings.reviewBatchSize);
-  $('reviewBatchHint').textContent=n?`当前筛选下有 ${n} 条到期表达 · 每组最多 ${batch} 条，完成后可继续下一组`:`当前筛选下暂无到期表达 · 每组最多 ${batch} 条`;
+  $('reviewBatchHint').textContent=n?`当前筛选下有 ${n} 条到期表达 · 下一组 ${Math.min(n,batch)} 条`:`当前筛选下暂无到期表达 · 每组最多 ${batch} 条`;
 }
 function setReviewBatchSize(value){
   const size=validBatchSize(value);
@@ -97,13 +104,61 @@ function setReviewBatchSize(value){
 }
 function updateFilterCounts(){const filtered=getFiltered();$('filteredCount').textContent=`当前 ${filtered.length} 条`;updateReviewPlanSummary();if(mode==='browse') renderLibrary();}
 function setModeTab(value){document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('active',b.dataset.mode===value));}
+// Store the exact IDs in each unfinished group. Filters and batch-size changes only
+// affect FUTURE groups; a group cannot be replaced or completed by failed attempts.
+function savedBatch(which){
+  if(!state.activeBatches || typeof state.activeBatches!=='object') state.activeBatches={};
+  const raw=state.activeBatches[which];
+  if(!raw || !Array.isArray(raw.ids))return null;
+  const known=new Set(entries.map(e=>e.id));
+  const ids=[...new Set(raw.ids.filter(id=>known.has(id)))];
+  if(!ids.length){delete state.activeBatches[which];saveState();return null;}
+  const passedIds=[...new Set((Array.isArray(raw.passedIds)?raw.passedIds:[]).filter(id=>ids.includes(id)))];
+  state.activeBatches[which]={mode:which,ids,passedIds,startedAt:raw.startedAt||Date.now()};
+  return state.activeBatches[which];
+}
+function groupPassCount(){return sessionBatch?.passedIds?.length||0;}
+function updateGroupPosition(){
+  const done=groupPassCount(), total=queue.length;
+  $('cardPosition').textContent=`本组 ${done}/${total} · 第 ${cursor+1} 条`;
+  $('queueProgress').style.width=`${Math.round(done/Math.max(total,1)*100)}%`;
+}
+function firstUnpassedFrom(index){
+  if(!queue.length)return -1;
+  const passed=new Set(sessionBatch?.passedIds||[]);
+  for(let n=0;n<queue.length;n++){
+    const i=(index+n)%queue.length;
+    if(!passed.has(queue[i].id))return i;
+  }
+  return -1;
+}
 function startSession(nextMode,oneEntry=null){
   mode=nextMode;revealed=false;checked=false;typedCorrect=false;learningStage='prompt';setModeTab(nextMode==='idle'?'learn':nextMode);
-  let pool=getFiltered();
-  if(oneEntry){queue=[oneEntry];}
-  else if(nextMode==='learn') queue=shuffle(getUnseen(pool)).slice(0,Number(state.settings.dailyGoal||10));
-  else if(nextMode==='review') queue=shuffle(getDue(pool)).slice(0,validBatchSize(state.settings.reviewBatchSize));
-  else {queue=[];}
+  sessionIsSingle=!!oneEntry;
+  sessionBatch=null;
+  const pool=getFiltered();
+  if(nextMode==='learn'||nextMode==='review'){
+    if(oneEntry){
+      // Standalone library practice leaves the saved groups unchanged.
+      sessionBatch={mode:nextMode,ids:[oneEntry.id],passedIds:[],startedAt:Date.now()};
+    }else{
+      sessionBatch=savedBatch(nextMode);
+      if(!sessionBatch){
+        // A failed expression in another unfinished group cannot leak into this one.
+        const locked=new Set(['learn','review'].flatMap(k=>savedBatch(k)?.ids||[]));
+        const eligible=pool.filter(e=>!locked.has(e.id));
+        const selected=nextMode==='learn'
+          ?shuffle(getUnseen(eligible)).slice(0,validBatchSize(state.settings.dailyGoal))
+          :shuffle(getDue(eligible)).slice(0,validBatchSize(state.settings.reviewBatchSize));
+        if(selected.length){
+          sessionBatch={mode:nextMode,ids:selected.map(e=>e.id),passedIds:[],startedAt:Date.now()};
+          state.activeBatches[nextMode]=sessionBatch;saveState();
+        }
+      }
+    }
+    const byId=new Map(entries.map(e=>[e.id,e]));
+    queue=(sessionBatch?.ids||[]).map(id=>byId.get(id)).filter(Boolean);
+  }else queue=[];
   cursor=0;
   $('librarySection').classList.toggle('hidden',nextMode!=='browse');
   $('workspaceSection').classList.toggle('browsing',nextMode==='browse');
@@ -114,12 +169,16 @@ function startSession(nextMode,oneEntry=null){
     $('idleState').classList.remove('hidden');$('studyCard').classList.add('hidden');$('sessionDone').classList.add('hidden');
     $('idleState').querySelector('h2').textContent=nextMode==='learn'?'这一范围暂时没有新表达。':nextMode==='review'?'目前没有到期的表达。':'当前筛选下没有可练习的表达。';
     $('idleState').querySelector('p:not(.small-cap)').textContent=nextMode==='learn'?'可以切换到“间隔复习”，巩固已经学过的表达；也可以清除筛选，继续扩展学习范围。':nextMode==='review'?'可以先学新表达，或调整筛选范围查看其他到期内容。':'请调整主题、用途或关键词筛选后再试。';
-    $('revealBtn').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('typingBox').classList.add('hidden');$('clozeBox').classList.add('hidden');$('cardPosition').textContent='没有待练习内容';$('queueProgress').style.width='0%';$('prevBtn').disabled=true;$('nextBtn').disabled=true;updateSessionLabel();return;
+    $('revealBtn').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('typingBox').classList.add('hidden');$('clozeBox').classList.add('hidden');$('cardPosition').textContent='没有待练习内容';$('queueProgress').style.width='0%';$('prevBtn').disabled=true;$('nextBtn').disabled=true;updateSessionLabel();updateReviewPlanSummary();return;
   }
+  const pending=firstUnpassedFrom(0);
+  if(pending<0){finishSession();return;}
+  cursor=pending;
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();
+  updateReviewPlanSummary();
 }
 function updateSessionLabel(){
-  const labels={learn:'新表达 · 看答案后拼写',review:`间隔复习 · 每组 ${validBatchSize(state.settings.reviewBatchSize)} 条`,browse:'表达总库'};
+  const labels={learn:`新表达 · 本组 ${queue.length||validBatchSize(state.settings.dailyGoal)} 条`,review:`间隔复习 · 本组 ${queue.length||validBatchSize(state.settings.reviewBatchSize)} 条`,browse:'表达总库'};
   $('sessionLabel').textContent=labels[mode]||'拼写输出';
 }
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
@@ -127,15 +186,16 @@ function escapeRegExp(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 function highlightTarget(sentence, target){if(!target||target.length>180||target.split(/\s+/).length>18)return escapeHtml(sentence);const re=new RegExp(escapeRegExp(target),'ig');return escapeHtml(sentence).replace(new RegExp(escapeRegExp(escapeHtml(target)),'ig'),m=>`<mark>${m}</mark>`);}
 function blankOut(sentence,target){if(!target||target.length>180)return sentence;const re=new RegExp(escapeRegExp(target),'i');return sentence.replace(re,'________');}
 function renderCard(){
-  if(!queue.length||cursor>=queue.length){finishSession();return;}
+  if(!queue.length){return;}
+  if((sessionBatch?.passedIds?.length||0)>=queue.length){finishSession();return;}
+  if(!queue[cursor]||sessionBatch?.passedIds?.includes(queue[cursor].id))cursor=firstUnpassedFrom(Math.max(0,cursor));
   const e=queue[cursor];
   revealed=false;checked=false;typedCorrect=false;
   learningStage=mode==='learn'?'prompt':'typing';
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');
-  $('cardPosition').textContent=`${String(cursor+1).padStart(2,'0')} / ${String(queue.length).padStart(2,'0')}`;
+  updateGroupPosition();
   $('cardCategory').textContent=e.category;$('cardType').textContent=TYPE_LABELS[e.type]||e.type;$('cardSource').textContent=e.sourceLabel;
-  const prior=progressFor(e);
-  $('masteryProgress').textContent=mode==='learn'?'新表达 · 看答案并正确拼写一次，即完成本次学习':isMastered(e)?'已掌握 · 本次复习正确一次即可完成':'间隔复习 · 正确拼写一次即可标记掌握';
+  $('masteryProgress').textContent=mode==='learn'?'学习0/1':'复习0/1';
   $('promptLabel').textContent=mode==='learn'?'先根据中文想一想，准备好再显示答案':e.type==='万能论证短句'?'中文整句 · 独立写出英文':'中文提示 · 独立拼写英文表达';
   $('promptText').textContent=e.zh;
   $('clozeSentence').textContent=blankOut(e.exampleEn,e.exampleTarget||e.en);
@@ -156,8 +216,9 @@ function renderCard(){
   $('typingNextBtn').textContent='下一条 →';
   // Avoid revealing the answer through speech before a recall attempt.
   $('speakBtn').disabled=true;
-  $('prevBtn').disabled=cursor===0;$('nextBtn').disabled=cursor>=queue.length-1;
-  $('queueProgress').style.width=`${Math.round(cursor/Math.max(queue.length,1)*100)}%`;
+  // Do not allow jumping over an unchecked/incorrect expression.
+  $('prevBtn').disabled=true;$('nextBtn').disabled=true;
+  $('prevBtn').title='本组逐条完成拼写判定';$('nextBtn').title='本组全部通过后才能进入下一组';
   updateSessionLabel();
 }
 function revealAnswer(){
@@ -422,6 +483,27 @@ function describeRegionalSpelling(input, target){
 }
 
 
+// Commit results when "核对" is pressed, so a correct 1/1 is saved even if
+// the user refreshes before pressing the button to proceed.
+function recordCurrentAttempt(){
+  const e=queue[cursor];if(!e||!checked)return;
+  const now=Date.now(),old=state.progress[e.id]||{level:0,reviews:0};
+  let level=Number(old.level||0),dueAt;
+  if(!typedCorrect){
+    level=0;dueAt=now+10*60*1000;
+  }else if(mode==='learn'){
+    level=Math.max(1,level);dueAt=now+INTERVAL_DAYS[Math.min(5,level)]*86400000;
+  }else{
+    level=Math.min(5,Math.max(2,level+1));dueAt=now+INTERVAL_DAYS[level]*86400000;
+  }
+  state.progress[e.id]={level,dueAt,lastAt:now,firstAt:old.firstAt||now,reviews:Number(old.reviews||0)+1,lastRating:typedCorrect?'known':'again',correctRounds:level};
+  if(typedCorrect && sessionBatch && !sessionBatch.passedIds.includes(e.id))sessionBatch.passedIds.push(e.id);
+  if(!sessionIsSingle && sessionBatch)state.activeBatches[mode]=sessionBatch;
+  const ds=todayStats();
+  if(typedCorrect&&!ds.doneIds.includes(e.id))ds.doneIds.push(e.id);
+  ds.ratings=Number(ds.ratings||0)+1;state.dailyStats[dateKey()]=ds;
+  saveState();updateStats();updateGroupPosition();
+}
 function checkTypedAnswer(){
   const e=queue[cursor];if(!e||checked||learningStage!=='typing')return;
   const input=normalizeAnswer($('answerInput').value);
@@ -430,9 +512,11 @@ function checkTypedAnswer(){
   const normalizedInput=normalizeRegionalSpelling(input);
   const matchedTarget=targets.find(target=>normalizeRegionalSpelling(target)===normalizedInput);
   checked=true;typedCorrect=matchedTarget!==undefined;learningStage='checked';
+  $('masteryProgress').textContent=mode==='learn'?(typedCorrect?'学习1/1':'学习0/1'):(typedCorrect?'复习1/1':'复习0/1');
   const regionalDetail=typedCorrect && input!==matchedTarget
     ? describeRegionalSpelling(input,matchedTarget) : '';
   $('answerInput').disabled=true;$('checkAnswerBtn').disabled=true;
+  recordCurrentAttempt();
   revealAnswer();
   if(typedCorrect){
     const passMessage=mode==='learn'?'✓ 拼写正确！这条表达完成了首次学习。':'✓ 拼写正确！本次复习通过，判定为已掌握。';
@@ -443,44 +527,40 @@ function checkTypedAnswer(){
   }else{
     $('typingFeedback').textContent='这次拼写未匹配标准表达。请对照答案检查词形、搭配和字母顺序。';
     $('typingFeedback').className='typing-feedback incorrect';
-    $('typingRoundNote').textContent='这条表达约 10 分钟后重新进入到期复习，不需要在本轮立即反复拼写。';
+    $('typingRoundNote').textContent='这条表达仍留在当前组；先完成本组其他条目，再回来拼写，直到本组全部通过。';
   }
   $('typingNextArea').classList.remove('hidden');
-  $('typingNextBtn').textContent=typedCorrect?'完成本条，下一条 →':'安排稍后重练，下一条 →';
-  $('queueProgress').style.width=`${Math.round((cursor+1)/Math.max(queue.length,1)*100)}%`;
+  const finished=groupPassCount()===queue.length;
+  $('typingNextBtn').textContent=finished?'全部通过，完成本组 →':typedCorrect?'本条通过，继续本组 →':'暂未通过，继续本组 →';
 }
 function rateCurrent(rating){
-  const e=queue[cursor];if(!e||!checked)return;
-  if((rating==='known')!==typedCorrect)return;
-  const now=Date.now(),old=state.progress[e.id]||{level:0,reviews:0};
-  let level=Number(old.level||0),dueAt;
-  if(!typedCorrect){
-    level=0;dueAt=now+10*60*1000;
-  }else if(mode==='learn'){
-    // First exposure: one correct spelling completes learning, but it is not yet mastery.
-    // Relearning a previously studied entry does not remove existing mastered status.
-    level=Math.max(1,level);dueAt=now+INTERVAL_DAYS[level]*86400000;
-  }else{
-    // Review: one correct spelling is sufficient to mark mastery.
-    level=Math.min(5,Math.max(2,level+1));dueAt=now+INTERVAL_DAYS[level]*86400000;
-  }
-  const firstAt=old.firstAt||now;
-  state.progress[e.id]={level,dueAt,lastAt:now,firstAt,reviews:Number(old.reviews||0)+1,lastRating:typedCorrect?'known':'again',correctRounds:level};
-  const ds=todayStats();if(!ds.doneIds.includes(e.id))ds.doneIds.push(e.id);ds.ratings=Number(ds.ratings||0)+1;state.dailyStats[dateKey()]=ds;
-  saveState();updateStats();
-  // Mistakes are scheduled for later review, never appended to the active session queue.
-  revealed=false;checked=false;typedCorrect=false;
-  if(cursor<queue.length-1){cursor++;renderCard();}else finishSession();
+  if(!queue[cursor]||!checked||(rating==='known')!==typedCorrect)return;
+  // The fixed group only progresses after every original member passes once.
+  if(groupPassCount()===queue.length){finishSession();return;}
+  const next=firstUnpassedFrom((cursor+1)%queue.length);
+  if(next<0){finishSession();return;}
+  cursor=next;renderCard();
 }
 function finishSession(){
-  $('studyCard').classList.add('hidden');$('idleState').classList.add('hidden');$('sessionDone').classList.remove('hidden');$('cardPosition').textContent='本轮完成';$('prevBtn').disabled=true;$('nextBtn').disabled=true;$('queueProgress').style.width='100%';
-  const n=queue.length;const learned=todayStats().doneIds.length; $('doneSummary').textContent=`本轮完成 ${n} 条练习。今天已经完成 ${learned} 条不同表达；再回忆几次，才能真正稳固下来。`;
+  if(!queue.length||groupPassCount()!==queue.length)return;
+  // Release this saved group only after every selected item has passed.
+  if(!sessionIsSingle && state.activeBatches?.[mode]){
+    delete state.activeBatches[mode];saveState();
+  }
+  $('studyCard').classList.add('hidden');$('idleState').classList.add('hidden');$('sessionDone').classList.remove('hidden');$('cardPosition').textContent=`本组 ${queue.length}/${queue.length}`;$('prevBtn').disabled=true;$('nextBtn').disabled=true;$('queueProgress').style.width='100%';
+  const n=queue.length;const learned=todayStats().doneIds.length;
+  $('doneSummary').textContent=`本组 ${n} 条表达已全部通过拼写判定（${n}/${n}）。今天累计正确拼写 ${learned} 条不同表达。`;
+  // Failed attempts of this group are already overwritten by its final passes.
   const due=getDue(getFiltered()).length;
   $('doneReviewBtn').textContent=due?`继续复习下一组（剩余 ${due} 条）→`:'查看复习计划 →';
   $('doneNewBtn').textContent='再学一组';
   updateSessionLabel();updateStats();
 }
-function moveBy(delta){if(!queue.length)return;cursor=Math.max(0,Math.min(queue.length-1,cursor+delta));renderCard();}
+function moveBy(delta){
+  // The old previous/next buttons would skip unchecked cards and break group locking.
+  // Advancement is exclusively via spelling check followed by "继续本组".
+  return;
+}
 function startSingle(e){startSession(progressFor(e)?'review':'learn',e);$('studyPanel').scrollIntoView({behavior:'smooth',block:'start'});}
 function renderCategoryGrid(){
   $('categoryGrid').innerHTML=CATEGORY_ORDER.map((category,index)=>{
@@ -552,7 +632,7 @@ function resetFilters(){selectedCategory='all';selectedType='all';searchText='';
 
 function speakCurrent(){const e=queue[cursor];if(!e||$('speakBtn').disabled||!('speechSynthesis'in window)){alert('当前浏览器没有提供语音朗读功能。');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(e.en);utterance.lang='en-US';utterance.rate=.88;window.speechSynthesis.speak(utterance);}
 function exportProgress(){const payload={app:'IELTS Writing Lab',version:3,exportedAt:new Date().toISOString(),state};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ielts-writing-progress-${dateKey()}.json`;a.click();URL.revokeObjectURL(url);}
-function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。旧版本记录不会直接计为拼写掌握。是否继续？');if(!ok)return;const importedProgress={...imported.progress};if(Number(data.version||0)<3){const now=Date.now();for(const p of Object.values(importedProgress)){if(!p||typeof p!=='object')continue;p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';}}state.progress={...state.progress,...importedProgress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
+function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。旧版本记录不会直接计为拼写掌握。是否继续？');if(!ok)return;const importedProgress={...imported.progress};if(Number(data.version||0)<3){const now=Date.now();for(const p of Object.values(importedProgress)){if(!p||typeof p!=='object')continue;p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';}}state.progress={...state.progress,...importedProgress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};state.activeBatches={...(state.activeBatches||{}),...(imported.activeBatches||{})};saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
 
 async function init(){
   try{const response=await fetch('words.json');if(!response.ok)throw new Error('words.json could not load');entries=await response.json();}catch(e){$('idleState').querySelector('h2').textContent='词库没有加载成功。';$('idleState').querySelector('p:not(.small-cap)').textContent='请确认 words.json 和 index.html 位于仓库同一目录，并通过 GitHub Pages 或本地静态服务器打开网站。';console.error(e);return;}

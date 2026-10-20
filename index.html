@@ -36,7 +36,7 @@
   </section>
 
   <section id="workspaceSection" class="workspace">
-    <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">新表达先看答案，再拼写一次；到期表达按自选组数复习，核对后直接在输入框下方对照答案与例句。</p></div>
+    <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">新表达和间隔复习均按固定组练习；全组拼写正确后再进入下一组。核对后可在输入框下方对照答案与例句。</p></div>
     <nav class="mode-tabs" aria-label="学习模式">
       <button class="mode-tab active" data-mode="learn"><span>01</span>新表达</button>
       <button class="mode-tab" data-mode="review"><span>02</span>间隔复习</button>
@@ -61,16 +61,16 @@
 
       <section class="study-panel" id="studyPanel">
         <div class="session-meta"><div><span id="sessionLabel" class="session-chip">新表达 · 看答案后拼写</span><span id="cardPosition" class="position-label">准备开始</span></div><button id="speakBtn" class="icon-action" title="朗读英文表达" disabled>🔊 <span>听一听</span></button></div>
-        <div id="reviewBatchBar" class="review-batch-bar hidden"><div><strong>分组复习计划</strong><span id="reviewBatchHint">按选定的数量复习，每组完成后可继续下一组</span></div><label>每组<select id="reviewBatchSizeInline" aria-label="复习时每组的数量"><option value="5">5 条</option><option value="10" selected>10 条</option><option value="15">15 条</option><option value="20">20 条</option><option value="30">30 条</option></select></label></div>
-        <div id="idleState" class="idle-state"><div class="idle-illustration"><span>A</span><span>→</span><span>?</span></div><p class="small-cap">READY WHEN YOU ARE</p><h2>先理解新表达，再亲手拼写。</h2><p>新表达：先看中文尝试回忆，再显示英文和例句，准备好后隐藏答案拼写一次。间隔复习：直接根据中文独立拼写一次；正确即可判定掌握，错误稍后再练。</p><div class="idle-actions"><button id="idleLearnBtn" class="primary-button">开始今日学习 →</button><button id="idleReviewBtn" class="secondary-button">先复习到期表达</button></div><div class="idle-meta"><span>✳ 首学正确后进入复习，复习正确一次即掌握</span><span>⌂ 记录只保存在当前浏览器</span></div></div>
+        <div id="reviewBatchBar" class="review-batch-bar hidden"><div><strong>分组复习计划</strong><span id="reviewBatchHint">当前组全部正确后再继续下一组</span></div><label>每组<select id="reviewBatchSizeInline" aria-label="复习时每组的数量"><option value="5">5 条</option><option value="10" selected>10 条</option><option value="15">15 条</option><option value="20">20 条</option><option value="30">30 条</option></select></label></div>
+        <div id="idleState" class="idle-state"><div class="idle-illustration"><span>A</span><span>→</span><span>?</span></div><p class="small-cap">READY WHEN YOU ARE</p><h2>先理解新表达，再亲手拼写。</h2><p>新表达先看答案和例句，再隐藏答案拼写；复习直接拼写。每组内容固定，全部表达各正确一次，才能开始下一组。</p><div class="idle-actions"><button id="idleLearnBtn" class="primary-button">开始今日学习 →</button><button id="idleReviewBtn" class="secondary-button">先复习到期表达</button></div><div class="idle-meta"><span>✳ 首学正确后进入复习，复习正确一次即掌握</span><span>⌂ 记录只保存在当前浏览器</span></div></div>
 
         <article id="studyCard" class="study-card hidden">
           <div class="card-kicker"><span id="cardCategory" class="category-chip">教育</span><span id="cardType" class="type-label">观点类</span><span id="cardSource" class="source-label">原资料表达</span></div>
-          <p id="masteryProgress" class="mastery-progress">新表达 · 看答案后拼写一次</p>
+          <p id="masteryProgress" class="mastery-progress">学习0/1</p>
           <p id="promptLabel" class="prompt-label">中文提示 · 请回忆英文</p>
           <h2 id="promptText" class="prompt-text">提高教育公平性</h2>
           <div id="clozeBox" class="cloze-box hidden"><span class="cloze-cap">IN CONTEXT · 语境线索</span><p id="clozeSentence"></p></div>
-          <div id="typingBox" class="typing-box hidden"><label for="answerInput" id="typingLabel">试着写出英文表达</label><div class="answer-row"><input id="answerInput" type="text" autocomplete="off" spellcheck="false" placeholder="输入英文表达…"><button id="checkAnswerBtn" class="primary-button">核对</button></div><p id="typingFeedback" class="typing-feedback"></p><p class="regional-spelling-hint">英式／美式规范拼写均认可；真正的拼写错误、词形及词序错误仍会提示。</p></div>
+          <div id="typingBox" class="typing-box hidden"><label for="answerInput" id="typingLabel">试着写出英文表达</label><div class="answer-row"><input id="answerInput" type="text" autocomplete="off" spellcheck="false" placeholder="输入英文表达…"><button id="checkAnswerBtn" class="primary-button">核对</button></div><p id="typingFeedback" class="typing-feedback"></p></div>
           <div id="answerArea" class="answer-area hidden">
             <div class="answer-top"><span class="answer-mark">✓</span><span>标准表达与例句 · 与上方输入对照</span></div>
             <h3 id="answerText" class="answer-text">enhance educational fairness</h3>
