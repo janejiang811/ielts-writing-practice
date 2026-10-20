@@ -6,8 +6,9 @@ const TYPE_ORDER = ['万能论证短句','观点类','积极结果','消极结�
 const TYPE_LABELS = {'万能论证短句':'完整论证句','观点类':'观点与措施','积极结果':'积极结果','消极结果':'消极结果','原因分析':'原因分析'};
 const INTERVAL_DAYS = [0.25,1,3,7,14,30];
 const SESSION_LIMITS = [5,10,15,20,30];
+function validBatchSize(n){const size=Number(n);return SESSION_LIMITS.includes(size)?size:10;}
 let entries = [];
-let state = { progress:{}, settings:{dailyGoal:10}, dailyStats:{} };
+let state = { progress:{}, settings:{dailyGoal:10,reviewBatchSize:10}, dailyStats:{} };
 let mode = 'idle';
 let queue = [];
 let cursor = 0;
@@ -66,6 +67,10 @@ function fillFilters(){
   $('libraryCategoryFilter').innerHTML=categoryOptions;
   $('libraryTypeFilter').innerHTML=typeOptions;
   $('dailyGoal').value=String(state.settings.dailyGoal||10);
+  const reviewSize=validBatchSize(state.settings.reviewBatchSize);
+  state.settings.reviewBatchSize=reviewSize;
+  $('reviewBatchSize').value=String(reviewSize);
+  $('reviewBatchSizeInline').value=String(reviewSize);
 }
 function updateStats(){
   const total=entries.length, reviewed=Object.keys(state.progress).filter(id=>entries.some(e=>e.id===id)).length;
@@ -77,20 +82,33 @@ function updateStats(){
   $('dueCount').textContent=due; $('duePill').textContent=due; $('masteredCount').textContent=mastered;
   $('newCount').textContent=newCount; $('overallProgress').textContent=`${Math.round(reviewed/Math.max(1,total)*100)}%`;
   $('reviewedCount').textContent=`${reviewed} 条有记录`;
+  updateReviewPlanSummary();
 }
-function updateFilterCounts(){const filtered=getFiltered();$('filteredCount').textContent=`当前 ${filtered.length} 条`;if(mode==='browse') renderLibrary();}
+function updateReviewPlanSummary(){
+  const n=getDue(getFiltered()).length, batch=validBatchSize(state.settings.reviewBatchSize);
+  $('reviewBatchHint').textContent=n?`当前筛选下有 ${n} 条到期表达 · 每组最多 ${batch} 条，完成后可继续下一组`:`当前筛选下暂无到期表达 · 每组最多 ${batch} 条`;
+}
+function setReviewBatchSize(value){
+  const size=validBatchSize(value);
+  state.settings.reviewBatchSize=size;
+  $('reviewBatchSize').value=String(size);
+  $('reviewBatchSizeInline').value=String(size);
+  saveState();updateReviewPlanSummary();updateSessionLabel();
+}
+function updateFilterCounts(){const filtered=getFiltered();$('filteredCount').textContent=`当前 ${filtered.length} 条`;updateReviewPlanSummary();if(mode==='browse') renderLibrary();}
 function setModeTab(value){document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('active',b.dataset.mode===value));}
 function startSession(nextMode,oneEntry=null){
   mode=nextMode;revealed=false;checked=false;typedCorrect=false;learningStage='prompt';setModeTab(nextMode==='idle'?'learn':nextMode);
   let pool=getFiltered();
   if(oneEntry){queue=[oneEntry];}
   else if(nextMode==='learn') queue=shuffle(getUnseen(pool)).slice(0,Number(state.settings.dailyGoal||10));
-  else if(nextMode==='review') queue=shuffle(getDue(pool)).slice(0,Number(state.settings.dailyGoal||10));
+  else if(nextMode==='review') queue=shuffle(getDue(pool)).slice(0,validBatchSize(state.settings.reviewBatchSize));
   else {queue=[];}
   cursor=0;
   $('librarySection').classList.toggle('hidden',nextMode!=='browse');
   $('workspaceSection').classList.toggle('browsing',nextMode==='browse');
   $('studyPanel').classList.toggle('hidden',nextMode==='browse');
+  $('reviewBatchBar').classList.toggle('hidden',nextMode!=='review');
   if(nextMode==='browse'){renderLibrary();return;}
   if(!queue.length){
     $('idleState').classList.remove('hidden');$('studyCard').classList.add('hidden');$('sessionDone').classList.add('hidden');
@@ -101,7 +119,7 @@ function startSession(nextMode,oneEntry=null){
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();
 }
 function updateSessionLabel(){
-  const labels={learn:'新表达 · 看答案后拼写',review:'间隔复习 · 独立拼写',browse:'表达总库'};
+  const labels={learn:'新表达 · 看答案后拼写',review:`间隔复习 · 每组 ${validBatchSize(state.settings.reviewBatchSize)} 条`,browse:'表达总库'};
   $('sessionLabel').textContent=labels[mode]||'拼写输出';
 }
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
@@ -167,16 +185,259 @@ function beginTyping(){
   $('answerInput').focus();
 }
 function normalizeAnswer(s){return String(s||'').toLowerCase().replace(/[’‘]/g,"'").replace(/[‐‑‒–—]/g,'-').replace(/\s+/g,' ').trim();}
+// IELTS accepts consistent British and American spelling. The pairs below are
+// explicitly reviewed lexical equivalents, not fuzzy/edit-distance matching.
+// We deliberately do NOT equate different grammar forms (e.g. practice/practise),
+// paraphrases or similar-looking words. Keep original lesson text unchanged.
+const REGIONAL_SPELLING_PAIRS = [
+  ['ageing','aging'],
+  ['analyse','analyze'],
+  ['analysed','analyzed'],
+  ['analysing','analyzing'],
+  ['behaviour','behavior'],
+  ['behaviours','behaviors'],
+  ['behavioural','behavioral'],
+  ['centre','center'],
+  ['centres','centers'],
+  ['centralise','centralize'],
+  ['centralised','centralized'],
+  ['centralising','centralizing'],
+  ['colour','color'],
+  ['colours','colors'],
+  ['coloured','colored'],
+  ['colourful','colorful'],
+  ['colouring','coloring'],
+  ['commercialisation','commercialization'],
+  ['commercialise','commercialize'],
+  ['commercialised','commercialized'],
+  ['commercialising','commercializing'],
+  ['counselling','counseling'],
+  ['counsellor','counselor'],
+  ['counsellors','counselors'],
+  ['defence','defense'],
+  ['defences','defenses'],
+  ['emphasise','emphasize'],
+  ['emphasises','emphasizes'],
+  ['emphasised','emphasized'],
+  ['emphasising','emphasizing'],
+  ['favour','favor'],
+  ['favours','favors'],
+  ['favoured','favored'],
+  ['favouring','favoring'],
+  ['favourable','favorable'],
+  ['favourite','favorite'],
+  ['favourites','favorites'],
+  ['fibre','fiber'],
+  ['fibres','fibers'],
+  ['flavour','flavor'],
+  ['flavours','flavors'],
+  ['fulfil','fulfill'],
+  ['fulfils','fulfills'],
+  ['fulfilment','fulfillment'],
+  ['globalisation','globalization'],
+  ['globalise','globalize'],
+  ['globalised','globalized'],
+  ['globalising','globalizing'],
+  ['homogenisation','homogenization'],
+  ['homogenise','homogenize'],
+  ['homogenised','homogenized'],
+  ['homogenising','homogenizing'],
+  ['honour','honor'],
+  ['honours','honors'],
+  ['honoured','honored'],
+  ['honouring','honoring'],
+  ['humour','humor'],
+  ['industrialisation','industrialization'],
+  ['industrialise','industrialize'],
+  ['industrialised','industrialized'],
+  ['industrialising','industrializing'],
+  ['judgement','judgment'],
+  ['labour','labor'],
+  ['labours','labors'],
+  ['laboured','labored'],
+  ['labouring','laboring'],
+  ['labourers','laborers'],
+  ['liberalisation','liberalization'],
+  ['liberalise','liberalize'],
+  ['liberalised','liberalized'],
+  ['liberalising','liberalizing'],
+  ['litre','liter'],
+  ['litres','liters'],
+  ['metre','meter'],
+  ['metres','meters'],
+  ['modernisation','modernization'],
+  ['modernise','modernize'],
+  ['modernised','modernized'],
+  ['modernising','modernizing'],
+  ['neighbour','neighbor'],
+  ['neighbours','neighbors'],
+  ['neighbourhood','neighborhood'],
+  ['neighbourhoods','neighborhoods'],
+  ['neighbouring','neighboring'],
+  ['offence','offense'],
+  ['offences','offenses'],
+  ['optimise','optimize'],
+  ['optimises','optimizes'],
+  ['optimised','optimized'],
+  ['optimising','optimizing'],
+  ['organisation','organization'],
+  ['organisations','organizations'],
+  ['organise','organize'],
+  ['organises','organizes'],
+  ['organised','organized'],
+  ['organising','organizing'],
+  ['paralyse','paralyze'],
+  ['paralysed','paralyzed'],
+  ['paralysing','paralyzing'],
+  ['prioritisation','prioritization'],
+  ['prioritise','prioritize'],
+  ['prioritises','prioritizes'],
+  ['prioritised','prioritized'],
+  ['prioritising','prioritizing'],
+  ['programme','program'],
+  ['programmes','programs'],
+  ['recognise','recognize'],
+  ['recognises','recognizes'],
+  ['recognised','recognized'],
+  ['recognising','recognizing'],
+  ['realise','realize'],
+  ['realises','realizes'],
+  ['realised','realized'],
+  ['realising','realizing'],
+  ['skilful','skillful'],
+  ['standardisation','standardization'],
+  ['standardise','standardize'],
+  ['standardises','standardizes'],
+  ['standardised','standardized'],
+  ['standardising','standardizing'],
+  ['subsidise','subsidize'],
+  ['subsidises','subsidizes'],
+  ['subsidised','subsidized'],
+  ['subsidising','subsidizing'],
+  ['theatre','theater'],
+  ['theatres','theaters'],
+  ['traveller','traveler'],
+  ['travellers','travelers'],
+  ['travelling','traveling'],
+  ['travelled','traveled'],
+  ['unauthorised','unauthorized'],
+  ['urbanisation','urbanization'],
+  ['urbanise','urbanize'],
+  ['urbanised','urbanized'],
+  ['urbanising','urbanizing'],
+  ['utilisation','utilization'],
+  ['utilise','utilize'],
+  ['utilised','utilized'],
+  ['utilising','utilizing'],
+  ['cancelled','canceled'],
+  ['cancelling','canceling'],
+  ['enrol','enroll'],
+  ['enrols','enrolls'],
+  ['enrolment','enrollment'],
+  ['enrolments','enrollments'],
+  ['grey','gray'],
+  ['greys','grays'],
+  ['modelling','modeling'],
+  ['modelled','modeled'],
+  ['labelling','labeling'],
+  ['labelled','labeled'],
+  ['minimise','minimize'],
+  ['minimises','minimizes'],
+  ['minimised','minimized'],
+  ['minimising','minimizing'],
+  ['maximise','maximize'],
+  ['maximises','maximizes'],
+  ['maximised','maximized'],
+  ['maximising','maximizing'],
+  ['summarise','summarize'],
+  ['summarises','summarizes'],
+  ['summarised','summarized'],
+  ['summarising','summarizing'],
+  ['criticise','criticize'],
+  ['criticises','criticizes'],
+  ['criticised','criticized'],
+  ['criticising','criticizing'],
+  ['specialise','specialize'],
+  ['specialises','specializes'],
+  ['specialised','specialized'],
+  ['specialising','specializing'],
+  ['characterise','characterize'],
+  ['characterises','characterizes'],
+  ['characterised','characterized'],
+  ['characterising','characterizing'],
+  ['socialise','socialize'],
+  ['socialises','socializes'],
+  ['socialised','socialized'],
+  ['socialising','socializing'],
+  ['socialisation','socialization'],
+  ['authorise','authorize'],
+  ['authorises','authorizes'],
+  ['authorised','authorized'],
+  ['authorising','authorizing'],
+  ['authorisation','authorization'],
+  ['civilisation','civilization'],
+  ['civilisations','civilizations'],
+  ['apologise','apologize'],
+  ['apologised','apologized'],
+  ['apologising','apologizing'],
+  ['sulphur','sulfur'],
+  ['sulphate','sulfate'],
+  ['catalogue','catalog'],
+  ['catalogues','catalogs'],
+  ['dialogue','dialog'],
+  ['dialogues','dialogs'],
+  ['paediatric','pediatric'],
+  ['paediatrics','pediatrics'],
+  ['anaemia','anemia'],
+  ['oestrogen','estrogen']
+];
+const REGIONAL_SPELLING_MAP = Object.create(null);
+for (const [british, american] of REGIONAL_SPELLING_PAIRS) {
+  REGIONAL_SPELLING_MAP[british] = american;
+  REGIONAL_SPELLING_MAP[american] = american;
+}
+function normalizeRegionalSpelling(s){
+  // Normalization is restricted to entire words; possessives retain their 's.
+  // This cannot change word order, remove words or forgive typos.
+  return normalizeAnswer(s).replace(/\b[a-z]+(?:'s)?\b/g, word => {
+    const possessive = word.endsWith("'s") ? "'s" : "";
+    const base = possessive ? word.slice(0,-2) : word;
+    return (REGIONAL_SPELLING_MAP[base] || base) + possessive;
+  });
+}
+function describeRegionalSpelling(input, target){
+  // Provide a concrete explanation only for a genuine regional spelling match.
+  const written = normalizeAnswer(input).match(/[a-z]+(?:'s)?/g) || [];
+  const expected = normalizeAnswer(target).match(/[a-z]+(?:'s)?/g) || [];
+  if(written.length !== expected.length) return '';
+  const changes = [];
+  for(let i=0;i<written.length;i++){
+    if(written[i] !== expected[i] &&
+       normalizeRegionalSpelling(written[i]) === normalizeRegionalSpelling(expected[i])){
+      const comparison = `${written[i]} ↔ ${expected[i]}`;
+      if(!changes.includes(comparison)) changes.push(comparison);
+    }
+  }
+  return changes.slice(0,3).join('、');
+}
+
+
 function checkTypedAnswer(){
   const e=queue[cursor];if(!e||checked||learningStage!=='typing')return;
   const input=normalizeAnswer($('answerInput').value);
   const targets=[e.en,e.suggestionEn].filter(Boolean).map(normalizeAnswer);
   if(!input){$('typingFeedback').textContent='请输入英文表达后再核对。';return;}
-  checked=true;typedCorrect=targets.includes(input);learningStage='checked';
+  const normalizedInput=normalizeRegionalSpelling(input);
+  const matchedTarget=targets.find(target=>normalizeRegionalSpelling(target)===normalizedInput);
+  checked=true;typedCorrect=matchedTarget!==undefined;learningStage='checked';
+  const regionalDetail=typedCorrect && input!==matchedTarget
+    ? describeRegionalSpelling(input,matchedTarget) : '';
   $('answerInput').disabled=true;$('checkAnswerBtn').disabled=true;
   revealAnswer();
   if(typedCorrect){
-    $('typingFeedback').textContent=mode==='learn'?'✓ 拼写正确！这条表达完成了首次学习。':'✓ 拼写正确！本次复习通过，判定为已掌握。';
+    const passMessage=mode==='learn'?'✓ 拼写正确！这条表达完成了首次学习。':'✓ 拼写正确！本次复习通过，判定为已掌握。';
+    $('typingFeedback').textContent=passMessage+
+      (regionalDetail?` 已认可英／美拼写差异：${regionalDetail}（两种拼写均正确）。`:'');
     $('typingFeedback').className='typing-feedback correct';
     $('typingRoundNote').textContent=mode==='learn'?'本次学习完成。下一次将通过独立拼写进行间隔复习，正确一次即可掌握。':'本次复习完成；系统将按间隔复习计划安排下一次回顾。';
   }else{
@@ -214,7 +475,10 @@ function rateCurrent(rating){
 function finishSession(){
   $('studyCard').classList.add('hidden');$('idleState').classList.add('hidden');$('sessionDone').classList.remove('hidden');$('cardPosition').textContent='本轮完成';$('prevBtn').disabled=true;$('nextBtn').disabled=true;$('queueProgress').style.width='100%';
   const n=queue.length;const learned=todayStats().doneIds.length; $('doneSummary').textContent=`本轮完成 ${n} 条练习。今天已经完成 ${learned} 条不同表达；再回忆几次，才能真正稳固下来。`;
-  $('doneReviewBtn').textContent=getDue().length?`复习到期表达（${getDue().length}）→`:'查看复习计划 →';updateSessionLabel();updateStats();
+  const due=getDue(getFiltered()).length;
+  $('doneReviewBtn').textContent=due?`继续复习下一组（剩余 ${due} 条）→`:'查看复习计划 →';
+  $('doneNewBtn').textContent='再学一组';
+  updateSessionLabel();updateStats();
 }
 function moveBy(delta){if(!queue.length)return;cursor=Math.max(0,Math.min(queue.length-1,cursor+delta));renderCard();}
 function startSingle(e){startSession(progressFor(e)?'review':'learn',e);$('studyPanel').scrollIntoView({behavior:'smooth',block:'start'});}
@@ -301,7 +565,9 @@ async function init(){
   $('librarySearchInput').addEventListener('input',e=>{searchText=e.target.value;$('searchInput').value=searchText;libraryPage=0;updateFilterCounts();});
   $('libraryResetBtn').addEventListener('click',resetFilters);
   $('backToTopicsBtn').addEventListener('click',resetFilters);
-  $('dailyGoal').addEventListener('change',e=>{state.settings.dailyGoal=Number(e.target.value)||10;saveState();updateStats();});
+  $('dailyGoal').addEventListener('change',e=>{state.settings.dailyGoal=validBatchSize(e.target.value);saveState();updateStats();});
+  $('reviewBatchSize').addEventListener('change',e=>setReviewBatchSize(e.target.value));
+  $('reviewBatchSizeInline').addEventListener('change',e=>setReviewBatchSize(e.target.value));
   $('startLearnBtn').addEventListener('click',()=>startSession('learn'));$('idleLearnBtn').addEventListener('click',()=>startSession('learn'));
   $('startReviewBtn').addEventListener('click',()=>startSession('review'));$('idleReviewBtn').addEventListener('click',()=>startSession('review'));
   $('doneReviewBtn').addEventListener('click',()=>startSession('review'));$('doneNewBtn').addEventListener('click',()=>startSession('learn'));
