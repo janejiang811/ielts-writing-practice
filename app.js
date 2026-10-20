@@ -46,7 +46,7 @@ function dateKey(date=new Date()){return `${date.getFullYear()}-${String(date.ge
 function shuffle(list){const out=[...list];for(let i=out.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[out[i],out[j]]=[out[j],out[i]];}return out;}
 function todayStats(){return state.dailyStats[dateKey()] || {doneIds:[],ratings:0};}
 function isDue(e){const p=state.progress[e.id];return !!p && Number(p.dueAt||0) <= Date.now();}
-function isMastered(e){const p=state.progress[e.id];return !!p && Number(p.level||0)>=4;}
+function isMastered(e){const p=state.progress[e.id];return !!p && Number(p.level||0)>=2;}
 function getFiltered(){
   const q=searchText.trim().toLowerCase();
   return entries.filter(e=>(selectedCategory==='all'||e.category===selectedCategory)&&(selectedType==='all'||e.type===selectedType)&&(!q||e.en.toLowerCase().includes(q)||e.zh.toLowerCase().includes(q)||e.category.includes(q)))
@@ -115,7 +115,7 @@ function renderCard(){
   $('sessionLabel').textContent=({learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对'}[mode]||'拼写输出');
   $('cardPosition').textContent=`${String(cursor+1).padStart(2,'0')} / ${String(queue.length).padStart(2,'0')}`;
   $('cardCategory').textContent=e.category; $('cardType').textContent=TYPE_LABELS[e.type]||e.type; $('cardSource').textContent=e.sourceLabel;
-  const prior=progressFor(e);$('masteryProgress').textContent=`连续拼写正确：${Math.min(4,Number(prior?.level||0))} / 4 次${isMastered(e)?' · 已掌握':''}`;
+  const prior=progressFor(e);$('masteryProgress').textContent=`连续拼写正确：${Math.min(2,Number(prior?.level||0))} / 2 次${isMastered(e)?' · 已掌握':''}`;
   $('promptLabel').textContent=e.type==='万能论证短句'?'中文整句 · 请准确写出英文':'中文提示 · 请准确拼写英文表达';
   $('promptText').textContent=e.zh;
   $('clozeSentence').textContent=blankOut(e.exampleEn,e.exampleTarget||e.en);
@@ -149,11 +149,11 @@ function checkTypedAnswer(){
   const targets=[e.en,e.suggestionEn].filter(Boolean).map(normalizeAnswer);
   if(!input){$('typingFeedback').textContent='先独立写出英文表达，再核对拼写。';return;}
   checked=true;typedCorrect=targets.includes(input);$('answerInput').disabled=true;$('checkAnswerBtn').disabled=true;revealAnswer();
-  const prior=progressFor(e),round=Math.min(4,Number(prior?.level||0));
+  const prior=progressFor(e),round=Math.min(2,Number(prior?.level||0));
   if(typedCorrect){
     $('typingFeedback').textContent='✓ 拼写与目标表达一致。只有记录这次正确拼写后，连续掌握进度才会增加。';
     $('typingFeedback').className='typing-feedback correct';
-    $('typingRoundNote').textContent=`本次拼写正确：记录后将达到 ${Math.min(4,round+1)} / 4 次连续正确；连续 4 次正确才标记为掌握。`;
+    $('typingRoundNote').textContent=`本次拼写正确：记录后将达到 ${Math.min(2,round+1)} / 2 次连续正确；连续 2 次正确才标记为掌握。`;
   }else{
     $('typingFeedback').textContent='这次未能完全拼写匹配。请对照答案，留意词形、固定搭配和字母顺序；本次不会计为掌握。';
     $('typingFeedback').className='typing-feedback incorrect';
@@ -241,8 +241,8 @@ function renderLibrary(){
     $('libraryPageLabel').textContent=pool.length?`显示第 ${libraryPage*pageSize+1}–${Math.min((libraryPage+1)*pageSize,pool.length)} 条`:'没有匹配的表达';
     $('libraryPrev').disabled=libraryPage===0;$('libraryNext').disabled=(libraryPage+1)*pageSize>=pool.length;
     $('libraryList').innerHTML=page.map(e=>{
-      const pr=progressFor(e),level=Math.min(4,Number(pr?.level||0));
-      return `<article class="library-item"><div><div class="lib-meta"><span>${escapeHtml(e.category)}</span><span>${escapeHtml(TYPE_LABELS[e.type]||e.type)}</span>${pr?`<span>${isMastered(e)?'已掌握':`回忆 ${level}/4`}</span>`:`<span>待学习</span>`}</div><p class="lib-zh">${escapeHtml(e.zh)}</p><p class="lib-en">${escapeHtml(e.en)}</p></div><button data-study-id="${escapeHtml(e.id)}">练这一条 →</button></article>`;
+      const pr=progressFor(e),level=Math.min(2,Number(pr?.level||0));
+      return `<article class="library-item"><div><div class="lib-meta"><span>${escapeHtml(e.category)}</span><span>${escapeHtml(TYPE_LABELS[e.type]||e.type)}</span>${pr?`<span>${isMastered(e)?'已掌握':`回忆 ${level}/2`}</span>`:`<span>待学习</span>`}</div><p class="lib-zh">${escapeHtml(e.zh)}</p><p class="lib-en">${escapeHtml(e.en)}</p></div><button data-study-id="${escapeHtml(e.id)}">练这一条 →</button></article>`;
     }).join('');
     $('libraryList').querySelectorAll('[data-study-id]').forEach(b=>b.addEventListener('click',()=>{const e=entries.find(x=>x.id===b.dataset.studyId);if(e)startSingle(e);}));
   }else{
