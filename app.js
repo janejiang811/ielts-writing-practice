@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
-const STORAGE_KEY = 'ieltsWritingLab.v2.progress';
+const STORAGE_KEY = 'ieltsWritingLab.v3.spelling-progress';
+const LEGACY_STORAGE_KEY = 'ieltsWritingLab.v2.progress';
 const CATEGORY_ORDER = ['教育','科技','社会','政府','媒体','国际','犯罪','文化','旅游','环境','健康','工作'];
 const TYPE_ORDER = ['万能论证短句','观点类','积极结果','消极结果','原因分析'];
 const TYPE_LABELS = {'万能论证短句':'完整论证句','观点类':'观点与措施','积极结果':'积极结果','消极结果':'消极结果','原因分析':'原因分析'};
@@ -20,8 +21,21 @@ let searchText = '';
 let againAdded = new Set();
 
 function safeReadState(){
-  try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+  try {
+    const currentRaw=localStorage.getItem(STORAGE_KEY);
+    const legacyRaw=localStorage.getItem(LEGACY_STORAGE_KEY);
+    const saved=JSON.parse(currentRaw || legacyRaw || '{}');
     if(saved && typeof saved === 'object') state = {...state, ...saved, progress:saved.progress || {}, settings:{...state.settings,...(saved.settings||{})},dailyStats:saved.dailyStats||{}};
+    // Previous versions allowed subjective self-rating. Preserve their history and settings,
+    // but require every previously studied item to re-earn mastery through verified spelling.
+    if(!currentRaw && legacyRaw){
+      const now=Date.now();
+      for(const p of Object.values(state.progress)){
+        if(!p || typeof p!=='object')continue;
+        p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';
+      }
+      saveState();
+    }
   } catch(e) { console.warn('Learning data could not be loaded.',e); }
   const today = dateKey();
   if(!state.dailyStats[today]) state.dailyStats[today] = {doneIds:[],ratings:0};
@@ -105,8 +119,8 @@ function startSession(nextMode,oneEntry=null){
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();
 }
 function updateSessionLabel(){
-  const labels={learn:'新表达 · 主动回忆',review:'间隔复习 · 到期优先',typing:'拼写回忆 · 新旧交错',browse:'表达总库'};
-  $('sessionLabel').textContent=labels[mode]||'主动回忆';
+  const labels={learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对',typing:'强化拼写 · 新旧交错',browse:'表达总库'};
+  $('sessionLabel').textContent=labels[mode]||'拼写输出';
 }
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
 function escapeRegExp(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
@@ -116,22 +130,24 @@ function renderCard(){
   if(!queue.length||cursor>=queue.length){finishSession();return;}
   const e=queue[cursor]; revealed=false;checked=false;
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');
-  $('sessionLabel').textContent=({learn:'新表达 · 主动回忆',review:'间隔复习 · 到期优先',typing:'拼写回忆 · 新旧交错'}[mode]||'单条练习');
+  $('sessionLabel').textContent=({learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对',typing:'强化拼写 · 新旧交错'}[mode]||'拼写输出');
   $('cardPosition').textContent=`${String(cursor+1).padStart(2,'0')} / ${String(queue.length).padStart(2,'0')}`;
   $('cardCategory').textContent=e.category; $('cardType').textContent=TYPE_LABELS[e.type]||e.type; $('cardSource').textContent=e.sourceLabel;
-  const prior=progressFor(e);$('masteryProgress').textContent=`连续掌握进度：${Math.min(4,Number(prior?.level||0))} / 4 次顺利回忆${isMastered(e)?' · 已掌握':''}`;
-  $('promptLabel').textContent=e.type==='万能论证短句'?'中文整句 · 尝试完整回忆英文':'中文提示 · 请回忆英文表达';
+  const prior=progressFor(e);$('masteryProgress').textContent=`连续拼写正确：${Math.min(4,Number(prior?.level||0))} / 4 次${isMastered(e)?' · 已掌握':''}`;
+  $('promptLabel').textContent=e.type==='万能论证短句'?'中文整句 · 请准确写出英文':'中文提示 · 请准确拼写英文表达';
   $('promptText').textContent=e.zh;
   $('clozeSentence').textContent=blankOut(e.exampleEn,e.exampleTarget||e.en);
-  $('clozeBox').classList.toggle('hidden',mode!=='typing');
-  $('typingBox').classList.toggle('hidden',mode!=='typing');
+  // Every study path uses an exact spelling check before it can affect mastery.
+  $('clozeBox').classList.remove('hidden');
+  $('typingBox').classList.remove('hidden');
   $('answerInput').value='';$('answerInput').disabled=false;$('checkAnswerBtn').disabled=false;$('typingFeedback').textContent='';$('typingFeedback').className='typing-feedback';
   $('answerText').textContent=e.en;$('answerTranslation').textContent=e.zh;
   $('exampleText').innerHTML=highlightTarget(e.exampleEn,e.exampleTarget||e.en);$('exampleTranslation').textContent=e.exampleZh;
   $('suggestionArea').classList.toggle('hidden',!e.suggestionEn);$('suggestionText').textContent=e.suggestionEn||'';$('suggestionNote').textContent=e.suggestionNote||'';
-  $('exampleTag').textContent=e.type==='万能论证短句'?'原资料整句':'补充语境句';
+  $('exampleTag').textContent=e.exampleTag||'语境例句';
   $('grammarTip').textContent=e.grammarTip;$('roleTag').textContent=e.role;
-  $('answerArea').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('revealBtn').classList.toggle('hidden',mode==='typing');$('revealBtn').innerHTML='显示答案与例句 <span>↓</span>';
+  $('answerArea').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('revealBtn').classList.add('hidden');$('revealBtn').innerHTML='先拼写再查看答案 <span>↓</span>';
+  $('typingNextBtn').textContent='记录本次结果，下一条 →';
   $('speakBtn').disabled=false;
   $('prevBtn').disabled=cursor===0;$('nextBtn').disabled=cursor>=queue.length-1;
   $('queueProgress').style.width=`${Math.round(cursor/Math.max(queue.length,1)*100)}%`;
@@ -140,34 +156,35 @@ function renderCard(){
 function revealAnswer(){
   revealed=true;
   $('answerArea').classList.remove('hidden');
-  $('ratingArea').classList.toggle('hidden',mode==='typing');
+  $('ratingArea').classList.add('hidden');
   $('revealBtn').classList.add('hidden');
   $('queueProgress').style.width=`${Math.round((cursor+1)/Math.max(queue.length,1)*100)}%`;
 }
-function normalizeAnswer(s){return String(s||'').toLowerCase().replace(/[’‘]/g,"'").replace(/[^a-z0-9'\s-]/g,' ').replace(/\s+/g,' ').trim();}
+function normalizeAnswer(s){return String(s||'').toLowerCase().replace(/[’‘]/g,"'").replace(/[‐‑‒–—]/g,'-').replace(/\s+/g,' ').trim();}
 function checkTypedAnswer(){
-  const e=queue[cursor];if(!e)return;
+  const e=queue[cursor];if(!e||checked)return;
   const input=normalizeAnswer($('answerInput').value);
   const targets=[e.en,e.suggestionEn].filter(Boolean).map(normalizeAnswer);
-  if(!input){$('typingFeedback').textContent='先试着写一遍，再核对答案。';return;}
+  if(!input){$('typingFeedback').textContent='先独立写出英文表达，再核对拼写。';return;}
   checked=true;typedCorrect=targets.includes(input);$('answerInput').disabled=true;$('checkAnswerBtn').disabled=true;revealAnswer();
   const prior=progressFor(e),round=Math.min(4,Number(prior?.level||0));
   if(typedCorrect){
-    $('typingFeedback').textContent='✓ 拼写与表达匹配。核对例句后，点击下方按钮记录一次顺利回忆。';
+    $('typingFeedback').textContent='✓ 拼写与目标表达一致。只有记录这次正确拼写后，连续掌握进度才会增加。';
     $('typingFeedback').className='typing-feedback correct';
-    $('typingRoundNote').textContent=`本次判定正确：连续顺利回忆将达到 ${Math.min(4,round+1)} / 4 次；需要多轮回忆，才会标记为掌握。`;
+    $('typingRoundNote').textContent=`本次拼写正确：记录后将达到 ${Math.min(4,round+1)} / 4 次连续正确；连续 4 次正确才标记为掌握。`;
   }else{
-    $('typingFeedback').textContent='这次还不完全匹配。请对照答案，留意固定搭配、词形和拼写，再记录本次结果。';
+    $('typingFeedback').textContent='这次未能完全拼写匹配。请对照答案，留意词形、固定搭配和字母顺序；本次不会计为掌握。';
     $('typingFeedback').className='typing-feedback incorrect';
-    $('typingRoundNote').textContent='本次判定未通过：系统会把这条表达重新安排到本轮后面，并重置连续掌握进度。';
+    $('typingRoundNote').textContent='本次拼写不正确：记录后会重置连续正确进度，并将这条表达重新安排练习。';
   }
   $('typingNextArea').classList.remove('hidden');
-  $('typingNextBtn').textContent=typedCorrect?'记录一次正确回忆，下一条 →':'记录结果并稍后重练 →';
+  $('typingNextBtn').textContent=typedCorrect?'记录一次正确拼写，下一条 →':'记录结果并稍后重练 →';
 }
 function rateCurrent(rating){
   const e=queue[cursor];if(!e)return;
-  if(mode==='typing'&&!checked)return;
-  if(!revealed&&mode!=='typing'){revealAnswer();return;}
+  if(!checked)return;
+  if((rating==='known')!==typedCorrect)return;
+  if(!revealed)revealAnswer();
   const now=Date.now(),old=state.progress[e.id]||{level:0,reviews:0};let level=Number(old.level||0),dueAt;
   if(rating==='again'){level=0;dueAt=now+10*60*1000;}
   else if(rating==='hard'){level=Math.max(0,level);const days=level===0?1:Math.min(7,INTERVAL_DAYS[Math.max(0,level-1)]);dueAt=now+days*86400000;}
@@ -255,9 +272,9 @@ function setFilterCategory(v){selectedCategory=v;$('categoryFilter').value=v;$('
 function setFilterType(v){selectedType=v;$('typeFilter').value=v;$('libraryTypeFilter').value=v;document.querySelectorAll('.quick-filter').forEach(b=>b.classList.toggle('selected',b.dataset.type===v));libraryPage=0;updateFilterCounts();}
 function resetFilters(){selectedCategory='all';selectedType='all';searchText='';$('categoryFilter').value='all';$('libraryCategoryFilter').value='all';$('typeFilter').value='all';$('libraryTypeFilter').value='all';$('searchInput').value='';$('librarySearchInput').value='';libraryPage=0;document.querySelectorAll('.quick-filter').forEach(b=>b.classList.remove('selected'));updateFilterCounts();}
 
-function speakCurrent(){const e=queue[cursor];if(!e||!('speechSynthesis'in window)){alert('当前浏览器没有提供语音朗读功能。');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(e.suggestionEn||e.en);utterance.lang='en-US';utterance.rate=.88;window.speechSynthesis.speak(utterance);}
-function exportProgress(){const payload={app:'IELTS Writing Lab',version:2,exportedAt:new Date().toISOString(),state};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ielts-writing-progress-${dateKey()}.json`;a.click();URL.revokeObjectURL(url);}
-function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。是否继续？');if(!ok)return;state.progress={...state.progress,...imported.progress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
+function speakCurrent(){const e=queue[cursor];if(!e||!('speechSynthesis'in window)){alert('当前浏览器没有提供语音朗读功能。');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(e.en);utterance.lang='en-US';utterance.rate=.88;window.speechSynthesis.speak(utterance);}
+function exportProgress(){const payload={app:'IELTS Writing Lab',version:3,exportedAt:new Date().toISOString(),state};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ielts-writing-progress-${dateKey()}.json`;a.click();URL.revokeObjectURL(url);}
+function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。旧版本记录不会直接计为拼写掌握。是否继续？');if(!ok)return;const importedProgress={...imported.progress};if(Number(data.version||0)<3){const now=Date.now();for(const p of Object.values(importedProgress)){if(!p||typeof p!=='object')continue;p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';}}state.progress={...state.progress,...importedProgress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
 
 async function init(){
   try{const response=await fetch('words.json');if(!response.ok)throw new Error('words.json could not load');entries=await response.json();}catch(e){$('idleState').querySelector('h2').textContent='词库没有加载成功。';$('idleState').querySelector('p:not(.small-cap)').textContent='请确认 words.json 和 index.html 位于仓库同一目录，并通过 GitHub Pages 或本地静态服务器打开网站。';console.error(e);return;}
@@ -283,7 +300,7 @@ async function init(){
   $('libraryPrev').addEventListener('click',()=>{libraryPage=Math.max(0,libraryPage-1);renderLibrary();});$('libraryNext').addEventListener('click',()=>{libraryPage++;renderLibrary();});
   $('exportBtn').addEventListener('click',exportProgress);$('importBtn').addEventListener('click',()=>$('importFile').click());$('importFile').addEventListener('change',e=>importProgressFile(e.target.files[0]));
   $('speakBtn').disabled=true;
-  // Launch in a calm, ready-to-study state. Nothing is marked complete until the learner rates a card.
+  // Launch in a calm, ready-to-study state. A card only affects mastery after the learner submits and records a spelling check.
   mode='idle';queue=[];cursor=0;setModeTab('learn');updateStats();
 }
 init();

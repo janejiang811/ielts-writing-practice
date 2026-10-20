@@ -15,8 +15,8 @@
 </header>
 <main id="top">
   <section class="hero">
-    <div class="hero-copy"><p class="eyebrow">YOUR IELTS WRITING TOOLKIT</p><h1>别只是看懂表达。<br><em>练到需要时能想起来。</em></h1><p class="hero-desc">先回忆，再看语境；先自己作答，再判断掌握程度。把观点、原因和结果，逐渐变成写作时能主动调用的语言。</p>
-      <div class="hero-pills"><span>600 条写作表达</span><span>12 个话题主题</span><span>到期复习</span><span>新旧交错 · 四次回忆掌握</span></div>
+    <div class="hero-copy"><p class="eyebrow">YOUR IELTS WRITING TOOLKIT</p><h1>别只是看懂表达。<br><em>练到需要时能想起来。</em></h1><p class="hero-desc">每条表达都先独立拼写，再核对语境；只有拼写完全正确才会累计掌握进度。把观点、原因和结果，逐渐变成考场上能准确写出的语言。</p>
+      <div class="hero-pills"><span>600 条写作表达</span><span>12 个话题主题</span><span>到期复习</span><span>新旧交错 · 连续四次拼写正确才掌握</span></div>
     </div>
     <div class="daily-card">
       <div class="daily-head"><span class="small-cap">TODAY'S PLAN</span><span class="calendar-icon">✳</span></div>
@@ -29,13 +29,13 @@
 
   <section class="stats-row" aria-label="学习统计">
     <div class="stat-card"><span class="stat-icon mint">↻</span><div><small>待复习</small><strong id="dueCount">0</strong><span>该重新回忆</span></div></div>
-    <div class="stat-card"><span class="stat-icon butter">✓</span><div><small>已掌握</small><strong id="masteredCount">0</strong><span>多次顺利回忆</span></div></div>
+    <div class="stat-card"><span class="stat-icon butter">✓</span><div><small>已掌握</small><strong id="masteredCount">0</strong><span>连续四次拼写正确</span></div></div>
     <div class="stat-card"><span class="stat-icon lilac">◌</span><div><small>尚未学习</small><strong id="newCount">600</strong><span>等待你来解锁</span></div></div>
     <div class="stat-card"><span class="stat-icon peach">↗</span><div><small>总进度</small><strong id="overallProgress">0%</strong><span id="reviewedCount">0 条有记录</span></div></div>
   </section>
 
   <section id="workspaceSection" class="workspace">
-    <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">建议每次 5–15 条，优先复习已经快忘掉的表达。</p></div>
+    <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">建议每次练习 5–15 条；每条都要通过拼写核对，连续四次正确才会标记为掌握。</p></div>
     <nav class="mode-tabs" aria-label="学习模式">
       <button class="mode-tab active" data-mode="learn"><span>01</span>新表达</button>
       <button class="mode-tab" data-mode="review"><span>02</span>间隔复习</button>
@@ -55,17 +55,17 @@
         <button class="quick-filter" data-type="积极结果"><span class="quick-dot yellow"></span>积极结果</button>
         <button class="quick-filter" data-type="消极结果"><span class="quick-dot red"></span>消极结果</button>
         <button class="quick-filter" data-type="原因分析"><span class="quick-dot purple"></span>原因分析</button>
-        <div class="mini-tip"><b>记忆小提示</b><p>先遮住英文主动回忆。只有“看起来熟悉”不算掌握，能自己写出来才更接近考场调用。</p></div>
+        <div class="mini-tip"><b>记忆小提示</b><p>先根据中文提示独立拼写。只认准确输出；看起来熟悉、能说出大意，都不等于已经掌握。</p></div>
         <div class="panel-bottom"><span id="filteredCount">当前 600 条</span><button id="clearFiltersBtn">清除筛选</button></div>
       </aside>
 
       <section class="study-panel" id="studyPanel">
-        <div class="session-meta"><div><span id="sessionLabel" class="session-chip">新表达 · 主动回忆</span><span id="cardPosition" class="position-label">准备开始</span></div><button id="speakBtn" class="icon-action" title="朗读英文表达" disabled>🔊 <span>听一听</span></button></div>
-        <div id="idleState" class="idle-state"><div class="idle-illustration"><span>A</span><span>→</span><span>?</span></div><p class="small-cap">READY WHEN YOU ARE</p><h2>先试着从记忆里找答案。</h2><p>开始后，卡片会先展示中文提示。请先想英文，再翻开答案，阅读语境例句，并诚实地给这条表达评级。</p><div class="idle-actions"><button id="idleLearnBtn" class="primary-button">开始今日学习 →</button><button id="idleReviewBtn" class="secondary-button">先复习到期表达</button></div><div class="idle-meta"><span>✳ 记忆程度会决定下次复习时间</span><span>⌂ 记录只保存在当前浏览器</span></div></div>
+        <div class="session-meta"><div><span id="sessionLabel" class="session-chip">新表达 · 拼写输出</span><span id="cardPosition" class="position-label">准备开始</span></div><button id="speakBtn" class="icon-action" title="朗读英文表达" disabled>🔊 <span>听一听</span></button></div>
+        <div id="idleState" class="idle-state"><div class="idle-illustration"><span>A</span><span>→</span><span>?</span></div><p class="small-cap">READY WHEN YOU ARE</p><h2>先独立写出，再核对答案。</h2><p>开始后，卡片会展示中文提示和挖空后的语境。请在输入框中准确拼写目标表达；只有完全匹配才会增加掌握进度，拼写错误则会重置连续正确次数。</p><div class="idle-actions"><button id="idleLearnBtn" class="primary-button">开始今日学习 →</button><button id="idleReviewBtn" class="secondary-button">先复习到期表达</button></div><div class="idle-meta"><span>✳ 拼写正确次数决定下次复习时间</span><span>⌂ 记录只保存在当前浏览器</span></div></div>
 
         <article id="studyCard" class="study-card hidden">
           <div class="card-kicker"><span id="cardCategory" class="category-chip">教育</span><span id="cardType" class="type-label">观点类</span><span id="cardSource" class="source-label">原资料表达</span></div>
-          <p id="masteryProgress" class="mastery-progress">连续掌握进度：0 / 4 次顺利回忆</p>
+          <p id="masteryProgress" class="mastery-progress">连续拼写正确：0 / 4 次</p>
           <p id="promptLabel" class="prompt-label">中文提示 · 请回忆英文</p>
           <h2 id="promptText" class="prompt-text">提高教育公平性</h2>
           <div id="clozeBox" class="cloze-box hidden"><span class="cloze-cap">IN CONTEXT · 语境线索</span><p id="clozeSentence"></p></div>
@@ -76,12 +76,12 @@
             <p id="answerTranslation" class="answer-translation">提高教育公平性</p>
             <div id="suggestionArea" class="suggestion-area hidden"><div>WRITING NOTE · 自然表达建议</div><p id="suggestionText"></p><small id="suggestionNote"></small></div>
             <div class="example-card"><div class="example-head"><span>IN CONTEXT</span><span id="exampleTag">语境例句</span></div><p id="exampleText" class="example-text"></p><p id="exampleTranslation" class="example-translation"></p></div>
-            <div class="usage-note"><span>HOW TO USE</span><p id="grammarTip"></p></div><div class="study-reminder"><span>✦</span><p><b>学习提示</b>：先回忆表达，再看例句中它承担什么语法功能。不要只记整句，要能把表达迁移到自己的论证里。</p></div>
+            <div class="usage-note"><span>HOW TO USE</span><p id="grammarTip"></p></div><div class="study-reminder"><span>✦</span><p><b>学习提示</b>：先准确拼写目标表达，再观察它在例句中承担的语法功能。拼写不正确不会累计掌握次数；例句用于理解语境和迁移表达，不建议整句机械套用。</p></div>
             <div class="related-row"><span>这条表达属于</span><span id="roleTag" class="role-tag"></span></div>
           </div>
-          <button id="revealBtn" class="reveal-button">显示答案与例句 <span>↓</span></button>
+          <button id="revealBtn" class="reveal-button">先拼写再查看答案 <span>↓</span></button>
           <div id="typingNextArea" class="typing-next-area hidden"><p id="typingRoundNote">拼写判定已记录；继续保持主动回忆。</p><button id="typingNextBtn" class="primary-button">记录本次结果，下一条 →</button></div>
-          <div id="ratingArea" class="rating-area hidden"><p>你刚才的回忆效果如何？</p><div class="rating-buttons"><button data-rating="again" class="rating-button again"><b>×</b><span>没想起来</span><small>稍后再练</small></button><button data-rating="hard" class="rating-button hard"><b>~</b><span>有点模糊</span><small>明天再看</small></button><button data-rating="known" class="rating-button known"><b>✓</b><span>顺利想起</span><small>延长间隔</small></button></div></div>
+          <div id="ratingArea" class="rating-area hidden"><p>掌握判定只依据拼写核对结果，不再通过主观评级增加掌握次数。</p></div>
         </article>
 
         <div id="sessionDone" class="session-done hidden"><div class="done-stamp">✓</div><p class="small-cap">SESSION COMPLETE</p><h2>这一组完成了。</h2><p id="doneSummary">你完成了本轮学习。</p><div class="done-actions"><button id="doneReviewBtn" class="primary-button">复习到期表达 →</button><button id="doneNewBtn" class="secondary-button">再学一组</button></div></div>
@@ -106,9 +106,9 @@
     </section>
   </section>
 
-  <section class="source-note"><div class="source-icon">i</div><div><b>词库与例句说明</b><p>中文释义与核心表达以你上传的《浓缩版观点库（短时间备考同学适用）》为基础；少数明显不自然的英文搭配已做轻度修订。所有例句均为本轮编辑整理的语境练习，并非声称来自 PDF 原文或真实语料库。表达是否适用仍需结合具体题目的对象、因果关系与语境判断，不建议机械套用。</p></div></section>
+  <section class="source-note"><div class="source-icon">i</div><div><b>词库与例句说明</b><p>中文释义与核心表达以你上传的《浓缩版观点库（短时间备考同学适用）》为基础；少数明显不自然的英文搭配已做轻度修订。所有例句均已按话题重新编辑，用来展示核心表达的用法、条件或作用机制，并非声称来自 PDF 原文或真实语料库。表达是否适用仍需结合具体题目的对象、因果关系与语境判断，不建议机械套用。</p></div></section>
 </main>
-<footer><span>IELTS WRITING LAB</span><span>主动回忆 · 语境学习 · 间隔复习</span></footer>
+<footer><span>IELTS WRITING LAB</span><span>准确拼写 · 语境学习 · 间隔复习</span></footer>
 <script src="app.js"></script>
 </body>
 </html>
