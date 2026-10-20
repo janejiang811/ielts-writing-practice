@@ -56,23 +56,6 @@ function progressFor(e){return state.progress[e.id]||null;}
 function categoryEntries(category){return entries.filter(e=>e.category===category);}
 function categoryProgress(category){const pool=categoryEntries(category),learned=pool.filter(e=>!!state.progress[e.id]).length,mastered=pool.filter(isMastered).length;return {total:pool.length,learned,mastered,remaining:pool.length-learned,inProgress:learned-mastered};}
 function hasLibraryNarrowing(){return selectedCategory!=='all'||selectedType!=='all'||!!searchText.trim();}
-function buildTypingQueue(pool,limit){
-  const unseen=shuffle(getUnseen(pool));
-  const previous=pool.filter(e=>!!state.progress[e.id]).sort((a,b)=>{
-    const pa=state.progress[a.id]||{},pb=state.progress[b.id]||{};
-    const dueA=Number(pa.dueAt||0)<=Date.now()?0:1,dueB=Number(pb.dueAt||0)<=Date.now()?0:1;
-    return dueA-dueB||Number(pa.lastAt||0)-Number(pb.lastAt||0);
-  });
-  const out=[];let ni=0,ri=0;
-  while(out.length<limit&&(ni<unseen.length||ri<previous.length)){
-    // Two new items, then one previously studied item: new learning stays active while older material returns regularly.
-    for(let n=0;n<2&&ni<unseen.length&&out.length<limit;n++)out.push(unseen[ni++]);
-    if(ri<previous.length&&out.length<limit)out.push(previous[ri++]);
-    if(ni>=unseen.length&&ri<previous.length){while(out.length<limit&&ri<previous.length)out.push(previous[ri++]);}
-    if(ri>=previous.length&&ni<unseen.length){while(out.length<limit&&ni<unseen.length)out.push(unseen[ni++]);}
-  }
-  return out;
-}
 function getDue(list=entries){return list.filter(isDue);}
 function getUnseen(list=entries){return list.filter(e=>!state.progress[e.id]);}
 function fillFilters(){
@@ -103,7 +86,6 @@ function startSession(nextMode,oneEntry=null){
   if(oneEntry){queue=[oneEntry];}
   else if(nextMode==='learn') queue=shuffle(getUnseen(pool)).slice(0,Number(state.settings.dailyGoal||10));
   else if(nextMode==='review') queue=shuffle(getDue(pool)).slice(0,Number(state.settings.dailyGoal||10));
-  else if(nextMode==='typing') queue=buildTypingQueue(pool,Number(state.settings.dailyGoal||10));
   else {queue=[];}
   cursor=0;
   $('librarySection').classList.toggle('hidden',nextMode!=='browse');
@@ -113,13 +95,13 @@ function startSession(nextMode,oneEntry=null){
   if(!queue.length){
     $('idleState').classList.remove('hidden');$('studyCard').classList.add('hidden');$('sessionDone').classList.add('hidden');
     $('idleState').querySelector('h2').textContent=nextMode==='learn'?'这一范围暂时没有新表达。':nextMode==='review'?'目前没有到期的表达。':'当前筛选下没有可练习的表达。';
-    $('idleState').querySelector('p:not(.small-cap)').textContent=nextMode==='learn'?'可以切换到“间隔复习”，巩固已经学过的表达；也可以清除筛选，继续扩展学习范围。':nextMode==='review'?'可以先学新表达，或者进入“拼写回忆”随机练习。':'请调整主题、用途或关键词筛选后再试。';
+    $('idleState').querySelector('p:not(.small-cap)').textContent=nextMode==='learn'?'可以切换到“间隔复习”，巩固已经学过的表达；也可以清除筛选，继续扩展学习范围。':nextMode==='review'?'可以先学新表达，或调整筛选范围查看其他到期内容。':'请调整主题、用途或关键词筛选后再试。';
     $('revealBtn').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('typingBox').classList.add('hidden');$('clozeBox').classList.add('hidden');$('cardPosition').textContent='没有待练习内容';$('queueProgress').style.width='0%';$('prevBtn').disabled=true;$('nextBtn').disabled=true;updateSessionLabel();return;
   }
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();
 }
 function updateSessionLabel(){
-  const labels={learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对',typing:'强化拼写 · 新旧交错',browse:'表达总库'};
+  const labels={learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对',browse:'表达总库'};
   $('sessionLabel').textContent=labels[mode]||'拼写输出';
 }
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
@@ -130,7 +112,7 @@ function renderCard(){
   if(!queue.length||cursor>=queue.length){finishSession();return;}
   const e=queue[cursor]; revealed=false;checked=false;
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');
-  $('sessionLabel').textContent=({learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对',typing:'强化拼写 · 新旧交错'}[mode]||'拼写输出');
+  $('sessionLabel').textContent=({learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对'}[mode]||'拼写输出');
   $('cardPosition').textContent=`${String(cursor+1).padStart(2,'0')} / ${String(queue.length).padStart(2,'0')}`;
   $('cardCategory').textContent=e.category; $('cardType').textContent=TYPE_LABELS[e.type]||e.type; $('cardSource').textContent=e.sourceLabel;
   const prior=progressFor(e);$('masteryProgress').textContent=`连续拼写正确：${Math.min(4,Number(prior?.level||0))} / 4 次${isMastered(e)?' · 已掌握':''}`;
