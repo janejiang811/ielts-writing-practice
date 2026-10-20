@@ -18,7 +18,7 @@ let libraryPage = 0;
 let selectedCategory = 'all';
 let selectedType = 'all';
 let searchText = '';
-let againAdded = new Set();
+let learningStage = 'prompt'; // prompt → example → typing → checked (learn); typing → checked (review)
 
 function safeReadState(){
   try {
@@ -81,7 +81,7 @@ function updateStats(){
 function updateFilterCounts(){const filtered=getFiltered();$('filteredCount').textContent=`当前 ${filtered.length} 条`;if(mode==='browse') renderLibrary();}
 function setModeTab(value){document.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('active',b.dataset.mode===value));}
 function startSession(nextMode,oneEntry=null){
-  mode=nextMode;revealed=false;checked=false;typedCorrect=false;againAdded=new Set();setModeTab(nextMode==='idle'?'learn':nextMode);
+  mode=nextMode;revealed=false;checked=false;typedCorrect=false;learningStage='prompt';setModeTab(nextMode==='idle'?'learn':nextMode);
   let pool=getFiltered();
   if(oneEntry){queue=[oneEntry];}
   else if(nextMode==='learn') queue=shuffle(getUnseen(pool)).slice(0,Number(state.settings.dailyGoal||10));
@@ -101,7 +101,7 @@ function startSession(nextMode,oneEntry=null){
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();
 }
 function updateSessionLabel(){
-  const labels={learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对',browse:'表达总库'};
+  const labels={learn:'新表达 · 看答案后拼写',review:'间隔复习 · 独立拼写',browse:'表达总库'};
   $('sessionLabel').textContent=labels[mode]||'拼写输出';
 }
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
@@ -110,72 +110,104 @@ function highlightTarget(sentence, target){if(!target||target.length>180||target
 function blankOut(sentence,target){if(!target||target.length>180)return sentence;const re=new RegExp(escapeRegExp(target),'i');return sentence.replace(re,'________');}
 function renderCard(){
   if(!queue.length||cursor>=queue.length){finishSession();return;}
-  const e=queue[cursor]; revealed=false;checked=false;
+  const e=queue[cursor];
+  revealed=false;checked=false;typedCorrect=false;
+  learningStage=mode==='learn'?'prompt':'typing';
   $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');
-  $('sessionLabel').textContent=({learn:'新表达 · 拼写输出',review:'间隔复习 · 拼写核对'}[mode]||'拼写输出');
   $('cardPosition').textContent=`${String(cursor+1).padStart(2,'0')} / ${String(queue.length).padStart(2,'0')}`;
-  $('cardCategory').textContent=e.category; $('cardType').textContent=TYPE_LABELS[e.type]||e.type; $('cardSource').textContent=e.sourceLabel;
-  const prior=progressFor(e);$('masteryProgress').textContent=`连续拼写正确：${Math.min(2,Number(prior?.level||0))} / 2 次${isMastered(e)?' · 已掌握':''}`;
-  $('promptLabel').textContent=e.type==='万能论证短句'?'中文整句 · 请准确写出英文':'中文提示 · 请准确拼写英文表达';
+  $('cardCategory').textContent=e.category;$('cardType').textContent=TYPE_LABELS[e.type]||e.type;$('cardSource').textContent=e.sourceLabel;
+  const prior=progressFor(e);
+  $('masteryProgress').textContent=mode==='learn'?'新表达 · 看答案并正确拼写一次，即完成本次学习':isMastered(e)?'已掌握 · 本次复习正确一次即可完成':'间隔复习 · 正确拼写一次即可标记掌握';
+  $('promptLabel').textContent=mode==='learn'?'先根据中文想一想，准备好再显示答案':e.type==='万能论证短句'?'中文整句 · 独立写出英文':'中文提示 · 独立拼写英文表达';
   $('promptText').textContent=e.zh;
   $('clozeSentence').textContent=blankOut(e.exampleEn,e.exampleTarget||e.en);
-  // Every study path uses an exact spelling check before it can affect mastery.
-  $('clozeBox').classList.remove('hidden');
-  $('typingBox').classList.remove('hidden');
-  $('answerInput').value='';$('answerInput').disabled=false;$('checkAnswerBtn').disabled=false;$('typingFeedback').textContent='';$('typingFeedback').className='typing-feedback';
+  $('answerInput').value='';$('answerInput').disabled=false;$('checkAnswerBtn').disabled=false;
+  $('typingFeedback').textContent='';$('typingFeedback').className='typing-feedback';
   $('answerText').textContent=e.en;$('answerTranslation').textContent=e.zh;
   $('exampleText').innerHTML=highlightTarget(e.exampleEn,e.exampleTarget||e.en);$('exampleTranslation').textContent=e.exampleZh;
   $('suggestionArea').classList.toggle('hidden',!e.suggestionEn);$('suggestionText').textContent=e.suggestionEn||'';$('suggestionNote').textContent=e.suggestionNote||'';
   $('exampleTag').textContent=e.exampleTag||'语境例句';
   $('grammarTip').textContent=e.grammarTip;$('roleTag').textContent=e.role;
-  $('answerArea').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('revealBtn').classList.add('hidden');$('revealBtn').innerHTML='先拼写再查看答案 <span>↓</span>';
-  $('typingNextBtn').textContent='记录本次结果，下一条 →';
-  $('speakBtn').disabled=false;
+  $('answerArea').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');
+  $('startTypingBtn').classList.add('hidden');
+  $('revealBtn').classList.toggle('hidden',mode!=='learn');
+  $('revealBtn').innerHTML='显示英文答案与例句 <span>↓</span>';
+  $('clozeBox').classList.toggle('hidden',mode==='learn');
+  $('typingBox').classList.toggle('hidden',mode==='learn');
+  $('typingLabel').textContent=mode==='learn'?'现在凭记忆拼写一次（答案已隐藏）':'根据中文提示拼写英文表达';
+  $('typingNextBtn').textContent='下一条 →';
+  // Avoid revealing the answer through speech before a recall attempt.
+  $('speakBtn').disabled=true;
   $('prevBtn').disabled=cursor===0;$('nextBtn').disabled=cursor>=queue.length-1;
   $('queueProgress').style.width=`${Math.round(cursor/Math.max(queue.length,1)*100)}%`;
   updateSessionLabel();
 }
 function revealAnswer(){
-  revealed=true;
-  $('answerArea').classList.remove('hidden');
-  $('ratingArea').classList.add('hidden');
-  $('revealBtn').classList.add('hidden');
-  $('queueProgress').style.width=`${Math.round((cursor+1)/Math.max(queue.length,1)*100)}%`;
+  if(!queue[cursor])return;
+  if(mode==='learn' && learningStage==='prompt'){
+    learningStage='example';revealed=true;
+    $('answerArea').classList.remove('hidden');
+    $('revealBtn').classList.add('hidden');
+    $('startTypingBtn').classList.remove('hidden');
+    $('speakBtn').disabled=false;
+  }else if(checked){
+    revealed=true;
+    $('answerArea').classList.remove('hidden');
+    $('speakBtn').disabled=false;
+  }
+}
+function beginTyping(){
+  if(mode!=='learn'||learningStage!=='example'||checked)return;
+  learningStage='typing';
+  $('answerArea').classList.add('hidden');
+  $('startTypingBtn').classList.add('hidden');
+  $('clozeBox').classList.remove('hidden');
+  $('typingBox').classList.remove('hidden');
+  $('speakBtn').disabled=true;
+  $('answerInput').focus();
 }
 function normalizeAnswer(s){return String(s||'').toLowerCase().replace(/[’‘]/g,"'").replace(/[‐‑‒–—]/g,'-').replace(/\s+/g,' ').trim();}
 function checkTypedAnswer(){
-  const e=queue[cursor];if(!e||checked)return;
+  const e=queue[cursor];if(!e||checked||learningStage!=='typing')return;
   const input=normalizeAnswer($('answerInput').value);
   const targets=[e.en,e.suggestionEn].filter(Boolean).map(normalizeAnswer);
-  if(!input){$('typingFeedback').textContent='先独立写出英文表达，再核对拼写。';return;}
-  checked=true;typedCorrect=targets.includes(input);$('answerInput').disabled=true;$('checkAnswerBtn').disabled=true;revealAnswer();
-  const prior=progressFor(e),round=Math.min(2,Number(prior?.level||0));
+  if(!input){$('typingFeedback').textContent='请输入英文表达后再核对。';return;}
+  checked=true;typedCorrect=targets.includes(input);learningStage='checked';
+  $('answerInput').disabled=true;$('checkAnswerBtn').disabled=true;
+  revealAnswer();
   if(typedCorrect){
-    $('typingFeedback').textContent='✓ 拼写与目标表达一致。只有记录这次正确拼写后，连续掌握进度才会增加。';
+    $('typingFeedback').textContent=mode==='learn'?'✓ 拼写正确！这条表达完成了首次学习。':'✓ 拼写正确！本次复习通过，判定为已掌握。';
     $('typingFeedback').className='typing-feedback correct';
-    $('typingRoundNote').textContent=`本次拼写正确：记录后将达到 ${Math.min(2,round+1)} / 2 次连续正确；连续 2 次正确才标记为掌握。`;
+    $('typingRoundNote').textContent=mode==='learn'?'本次学习完成。下一次将通过独立拼写进行间隔复习，正确一次即可掌握。':'本次复习完成；系统将按间隔复习计划安排下一次回顾。';
   }else{
-    $('typingFeedback').textContent='这次未能完全拼写匹配。请对照答案，留意词形、固定搭配和字母顺序；本次不会计为掌握。';
+    $('typingFeedback').textContent='这次拼写未匹配标准表达。请对照答案检查词形、搭配和字母顺序。';
     $('typingFeedback').className='typing-feedback incorrect';
-    $('typingRoundNote').textContent='本次拼写不正确：记录后会重置连续正确进度，并将这条表达重新安排练习。';
+    $('typingRoundNote').textContent='这条表达约 10 分钟后重新进入到期复习，不需要在本轮立即反复拼写。';
   }
   $('typingNextArea').classList.remove('hidden');
-  $('typingNextBtn').textContent=typedCorrect?'记录一次正确拼写，下一条 →':'记录结果并稍后重练 →';
+  $('typingNextBtn').textContent=typedCorrect?'完成本条，下一条 →':'安排稍后重练，下一条 →';
+  $('queueProgress').style.width=`${Math.round((cursor+1)/Math.max(queue.length,1)*100)}%`;
 }
 function rateCurrent(rating){
-  const e=queue[cursor];if(!e)return;
-  if(!checked)return;
+  const e=queue[cursor];if(!e||!checked)return;
   if((rating==='known')!==typedCorrect)return;
-  if(!revealed)revealAnswer();
-  const now=Date.now(),old=state.progress[e.id]||{level:0,reviews:0};let level=Number(old.level||0),dueAt;
-  if(rating==='again'){level=0;dueAt=now+10*60*1000;}
-  else if(rating==='hard'){level=Math.max(0,level);const days=level===0?1:Math.min(7,INTERVAL_DAYS[Math.max(0,level-1)]);dueAt=now+days*86400000;}
-  else{level=Math.min(5,level+1);dueAt=now+INTERVAL_DAYS[level]*86400000;}
+  const now=Date.now(),old=state.progress[e.id]||{level:0,reviews:0};
+  let level=Number(old.level||0),dueAt;
+  if(!typedCorrect){
+    level=0;dueAt=now+10*60*1000;
+  }else if(mode==='learn'){
+    // First exposure: one correct spelling completes learning, but it is not yet mastery.
+    // Relearning a previously studied entry does not remove existing mastered status.
+    level=Math.max(1,level);dueAt=now+INTERVAL_DAYS[level]*86400000;
+  }else{
+    // Review: one correct spelling is sufficient to mark mastery.
+    level=Math.min(5,Math.max(2,level+1));dueAt=now+INTERVAL_DAYS[level]*86400000;
+  }
   const firstAt=old.firstAt||now;
-  state.progress[e.id]={level,dueAt,lastAt:now,firstAt,reviews:Number(old.reviews||0)+1,lastRating:rating,correctRounds:level};
-  const ds=todayStats();if(!ds.doneIds.includes(e.id))ds.doneIds.push(e.id);ds.ratings=Number(ds.ratings||0)+1;state.dailyStats[dateKey()]=ds;saveState();
-  if(rating==='again'&&!againAdded.has(e.id)&&!queue.slice(cursor+1).some(x=>x.id===e.id)){queue.push(e);againAdded.add(e.id);}
-  updateStats();
+  state.progress[e.id]={level,dueAt,lastAt:now,firstAt,reviews:Number(old.reviews||0)+1,lastRating:typedCorrect?'known':'again',correctRounds:level};
+  const ds=todayStats();if(!ds.doneIds.includes(e.id))ds.doneIds.push(e.id);ds.ratings=Number(ds.ratings||0)+1;state.dailyStats[dateKey()]=ds;
+  saveState();updateStats();
+  // Mistakes are scheduled for later review, never appended to the active session queue.
   revealed=false;checked=false;typedCorrect=false;
   if(cursor<queue.length-1){cursor++;renderCard();}else finishSession();
 }
@@ -185,7 +217,7 @@ function finishSession(){
   $('doneReviewBtn').textContent=getDue().length?`复习到期表达（${getDue().length}）→`:'查看复习计划 →';updateSessionLabel();updateStats();
 }
 function moveBy(delta){if(!queue.length)return;cursor=Math.max(0,Math.min(queue.length-1,cursor+delta));renderCard();}
-function startSingle(e){startSession('learn',e);$('studyPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+function startSingle(e){startSession(progressFor(e)?'review':'learn',e);$('studyPanel').scrollIntoView({behavior:'smooth',block:'start'});}
 function renderCategoryGrid(){
   $('categoryGrid').innerHTML=CATEGORY_ORDER.map((category,index)=>{
     const p=categoryProgress(category),samples=categoryEntries(category).slice(0,2);
@@ -242,7 +274,7 @@ function renderLibrary(){
     $('libraryPrev').disabled=libraryPage===0;$('libraryNext').disabled=(libraryPage+1)*pageSize>=pool.length;
     $('libraryList').innerHTML=page.map(e=>{
       const pr=progressFor(e),level=Math.min(2,Number(pr?.level||0));
-      return `<article class="library-item"><div><div class="lib-meta"><span>${escapeHtml(e.category)}</span><span>${escapeHtml(TYPE_LABELS[e.type]||e.type)}</span>${pr?`<span>${isMastered(e)?'已掌握':`回忆 ${level}/2`}</span>`:`<span>待学习</span>`}</div><p class="lib-zh">${escapeHtml(e.zh)}</p><p class="lib-en">${escapeHtml(e.en)}</p></div><button data-study-id="${escapeHtml(e.id)}">练这一条 →</button></article>`;
+      return `<article class="library-item"><div><div class="lib-meta"><span>${escapeHtml(e.category)}</span><span>${escapeHtml(TYPE_LABELS[e.type]||e.type)}</span>${pr?`<span>${isMastered(e)?'已掌握':'待复习'}</span>`:`<span>待学习</span>`}</div><p class="lib-zh">${escapeHtml(e.zh)}</p><p class="lib-en">${escapeHtml(e.en)}</p></div><button data-study-id="${escapeHtml(e.id)}">练这一条 →</button></article>`;
     }).join('');
     $('libraryList').querySelectorAll('[data-study-id]').forEach(b=>b.addEventListener('click',()=>{const e=entries.find(x=>x.id===b.dataset.studyId);if(e)startSingle(e);}));
   }else{
@@ -254,7 +286,7 @@ function setFilterCategory(v){selectedCategory=v;$('categoryFilter').value=v;$('
 function setFilterType(v){selectedType=v;$('typeFilter').value=v;$('libraryTypeFilter').value=v;document.querySelectorAll('.quick-filter').forEach(b=>b.classList.toggle('selected',b.dataset.type===v));libraryPage=0;updateFilterCounts();}
 function resetFilters(){selectedCategory='all';selectedType='all';searchText='';$('categoryFilter').value='all';$('libraryCategoryFilter').value='all';$('typeFilter').value='all';$('libraryTypeFilter').value='all';$('searchInput').value='';$('librarySearchInput').value='';libraryPage=0;document.querySelectorAll('.quick-filter').forEach(b=>b.classList.remove('selected'));updateFilterCounts();}
 
-function speakCurrent(){const e=queue[cursor];if(!e||!('speechSynthesis'in window)){alert('当前浏览器没有提供语音朗读功能。');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(e.en);utterance.lang='en-US';utterance.rate=.88;window.speechSynthesis.speak(utterance);}
+function speakCurrent(){const e=queue[cursor];if(!e||$('speakBtn').disabled||!('speechSynthesis'in window)){alert('当前浏览器没有提供语音朗读功能。');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(e.en);utterance.lang='en-US';utterance.rate=.88;window.speechSynthesis.speak(utterance);}
 function exportProgress(){const payload={app:'IELTS Writing Lab',version:3,exportedAt:new Date().toISOString(),state};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ielts-writing-progress-${dateKey()}.json`;a.click();URL.revokeObjectURL(url);}
 function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。旧版本记录不会直接计为拼写掌握。是否继续？');if(!ok)return;const importedProgress={...imported.progress};if(Number(data.version||0)<3){const now=Date.now();for(const p of Object.values(importedProgress)){if(!p||typeof p!=='object')continue;p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';}}state.progress={...state.progress,...importedProgress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
 
@@ -275,7 +307,7 @@ async function init(){
   $('doneReviewBtn').addEventListener('click',()=>startSession('review'));$('doneNewBtn').addEventListener('click',()=>startSession('learn'));
   document.querySelectorAll('.mode-tab').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.mode==='browse'){startSession('browse');}else startSession(b.dataset.mode);}));
   document.querySelectorAll('.quick-filter').forEach(b=>b.addEventListener('click',()=>{setFilterType(selectedType===b.dataset.type?'all':b.dataset.type);if(mode==='browse')renderLibrary();}));
-  $('clearFiltersBtn').addEventListener('click',resetFilters);$('revealBtn').addEventListener('click',revealAnswer);
+  $('clearFiltersBtn').addEventListener('click',resetFilters);$('revealBtn').addEventListener('click',revealAnswer);$('startTypingBtn').addEventListener('click',beginTyping);
   document.querySelectorAll('[data-rating]').forEach(b=>b.addEventListener('click',()=>rateCurrent(b.dataset.rating)));
   $('prevBtn').addEventListener('click',()=>moveBy(-1));$('nextBtn').addEventListener('click',()=>moveBy(1));$('speakBtn').addEventListener('click',speakCurrent);
   $('checkAnswerBtn').addEventListener('click',checkTypedAnswer);$('answerInput').addEventListener('keydown',e=>{if(e.key==='Enter')checkTypedAnswer();});$('typingNextBtn').addEventListener('click',()=>{if(checked)rateCurrent(typedCorrect?'known':'again');});
