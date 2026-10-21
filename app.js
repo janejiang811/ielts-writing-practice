@@ -184,43 +184,31 @@ function pauseSessionTimer(){
   timerStartedAt=null;
 }
 function resumeSessionTimer(){if(timerStartedAt===null&&sessionBatch&&queue.length&&['learn','review'].includes(mode)&&!document.hidden)timerStartedAt=performance.now();}
-// Open/close the dedicated statistics panel without disturbing the study page.
-let chartDrawerReturnFocus=null;
+// Swap the two sides of the existing green plan card in-place.
 function openChartDrawer(){
-  const drawer=$('chartDrawer');
-  if(drawer.classList.contains('is-open'))return;
-  chartDrawerReturnFocus=document.activeElement;
+  const card=$('dailyCard'),chart=$('chartDrawer'),plan=$('dailyPlanView');
+  if(card.classList.contains('is-chart-view'))return;
   createBarChart();
-  drawer.inert=false;
-  drawer.removeAttribute('inert');
-  drawer.setAttribute('aria-hidden','false');
-  drawer.classList.add('is-open');
-  document.body.classList.add('chart-drawer-open');
+  chart.inert=false;chart.removeAttribute('inert');chart.setAttribute('aria-hidden','false');
+  card.classList.add('is-chart-view');
+  plan.inert=true;plan.setAttribute('aria-hidden','true');
   $('chartToggle').setAttribute('aria-expanded','true');
-  $('closeChartDrawer').focus();
+  $('closeChartDrawer').focus({preventScroll:true});
   requestAnimationFrame(showLatestChartDates);
 }
 function closeChartDrawer(){
-  const drawer=$('chartDrawer');
-  if(!drawer.classList.contains('is-open'))return;
-  drawer.classList.remove('is-open');
-  drawer.setAttribute('aria-hidden','true');
-  drawer.inert=true;
-  document.body.classList.remove('chart-drawer-open');
+  const card=$('dailyCard'),chart=$('chartDrawer'),plan=$('dailyPlanView');
+  if(!card.classList.contains('is-chart-view'))return;
+  plan.inert=false;plan.removeAttribute('inert');plan.setAttribute('aria-hidden','false');
+  card.classList.remove('is-chart-view');
+  chart.inert=true;chart.setAttribute('aria-hidden','true');
   $('chartToggle').setAttribute('aria-expanded','false');
-  const returnTo=chartDrawerReturnFocus;
-  chartDrawerReturnFocus=null;
-  if(returnTo&&typeof returnTo.focus==='function')returnTo.focus();
+  $('chartToggle').focus({preventScroll:true});
 }
 function onChartDrawerKeydown(e){
-  if(!$('chartDrawer').classList.contains('is-open'))return;
-  if(e.key==='Escape'){e.preventDefault();closeChartDrawer();return;}
-  if(e.key!=='Tab')return;
-  const focusable=Array.from($('dailyChartPanel').querySelectorAll('button:not([disabled]),select:not([disabled]),[tabindex="0"]')).filter(node=>node.getClientRects().length);
-  if(!focusable.length)return;
-  const first=focusable[0],last=focusable[focusable.length-1];
-  if(e.shiftKey&&(document.activeElement===first||document.activeElement===$('dailyChartPanel'))){e.preventDefault();last.focus();}
-  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  if(e.key==='Escape'&&$('dailyCard').classList.contains('is-chart-view')){
+    e.preventDefault();closeChartDrawer();
+  }
 }
 function showLatestChartDates(){
   const scroll=$('dailyChart')?.parentElement;
@@ -270,11 +258,8 @@ function createBarChart(){
   $('chartLearnedTotal').textContent=learnedTotal;
   $('chartMasteredTotal').textContent=masteredTotal;
   $('chartPeriodTotal').textContent=periodPasses;
-  $('chartTotal').textContent=`近${days}天 · 新学 ${totals.learn} / 复习 ${totals.review} / 历史 ${totals.legacy}`;
   $('chartEmpty').classList.toggle('hidden',periodPasses!==0);
-  $('chartEmpty').textContent=`近${days}天没有可按日绘制的拼写通过记录。已有 ${learnedTotal} 条累计学习记录会保留在上方；可以切换到更长的时间范围。`;
-  $('chartLegacyNote').classList.toggle('hidden',totals.legacy===0);
-  $('chartLegacyNote').textContent=totals.legacy?`其中 ${totals.legacy} 条为旧版按日完成记录，原版本没有区分「新学／复习」，因此用金色柱表示，不会擅自改写历史数据。`:'';
+  $('chartEmpty').textContent='这一时间段暂无记录';
 }
 
 function fillFilters(){
@@ -995,7 +980,6 @@ async function init(){
   $('backToTopicsBtn').addEventListener('click',resetFilters);
   $('chartToggle').addEventListener('click',openChartDrawer);
   $('closeChartDrawer').addEventListener('click',closeChartDrawer);
-  $('chartBackdrop').addEventListener('click',closeChartDrawer);
   document.addEventListener('keydown',onChartDrawerKeydown);
   $('chartRange').addEventListener('change',e=>{state.settings.chartDays=Number(e.target.value);saveState();createBarChart();showLatestChartDates();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseSessionTimer();else resumeSessionTimer();});

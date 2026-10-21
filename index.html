@@ -6,7 +6,13 @@
   <meta name="theme-color" content="#f6f4ee">
   <meta name="description" content="为雅思大作文设计的观点表达记忆与复习工具">
   <title>IELTS Writing Lab｜观点表达记忆室</title>
-  <link rel="stylesheet" href="style.css">
+  <!-- Safety net for stale external CSS: the statistics view always stays inside its card. -->
+  <style id="card-flip-critical">
+    #dailyCard{position:relative;overflow:hidden}
+    #chartDrawer.daily-card-stats{position:absolute;inset:0;transform:translateX(112%);visibility:hidden;pointer-events:none}
+    #dailyCard.is-chart-view #chartDrawer.daily-card-stats{transform:translateX(0);visibility:visible;pointer-events:auto}
+  </style>
+  <link rel="stylesheet" href="style.css?v=18-card-flip-20261022">
 </head>
 <body>
 <header class="topbar">
@@ -18,15 +24,31 @@
     <div class="hero-copy"><p class="eyebrow">YOUR IELTS WRITING TOOLKIT</p><h1>别只是看懂表达。<br><em>练到需要时能想起来。</em></h1><p class="hero-desc">新表达先看中文、猜想答案，再结合英文例句理解用法，随后隐藏答案拼写一次；复习时直接独立拼写。把观点、原因和结果，练成考场上能准确写出的语言。</p>
       <div class="hero-pills"><span>600 条写作表达</span><span>12 个话题主题</span><span>智能间隔复习</span><span>新表达学一次 · 复习正确一次即掌握</span></div>
     </div>
-    <div class="daily-card">
-      <div class="daily-head"><span class="small-cap">TODAY'S PLAN</span><button id="chartToggle" class="chart-toggle" type="button" aria-controls="dailyChartPanel" aria-expanded="false" title="打开右侧学习统计面板" aria-label="打开学习统计面板"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 20V13M10 20V7M16 20V11M22 20V4"/></svg></button></div>
+    <div class="daily-card" id="dailyCard">
+      <div class="daily-card-plan" id="dailyPlanView">
+      <div class="daily-head"><span class="small-cap">TODAY'S PLAN</span><button id="chartToggle" class="card-arrow" type="button" aria-controls="chartDrawer" aria-expanded="false" title="切换到学习统计" aria-label="查看学习统计"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div>
       <div class="daily-number"><strong id="todayDone">0</strong><span>/ <b id="todayGoalLabel">10</b> 条</span></div>
       <div class="progress-track"><span id="dailyProgress"></span></div>
       <div class="daily-foot"><span id="dailyHint">今天还没开始，先学几条。</span></div>
       <div class="study-plan-selectors"><label>新表达每组<select id="dailyGoal" aria-label="每组新表达数量"><option value="5">5 条</option><option value="10" selected>10 条</option><option value="15">15 条</option><option value="20">20 条</option><option value="30">30 条</option></select></label><label>复习每组<select id="reviewBatchSize" aria-label="每组复习数量"><option value="5">5 条</option><option value="10" selected>10 条</option><option value="15">15 条</option><option value="20">20 条</option><option value="30">30 条</option></select></label></div>
       <div class="daily-actions"><button id="startLearnBtn" class="primary-button">开始新表达 <span>→</span></button><button id="startReviewBtn" class="secondary-button"><span class="review-action-text">复习到期</span> <b id="duePill">0</b></button></div>
       <div class="daily-special-actions"><button id="specialLearnBtn" type="button">＋ 专项学习 <span>选择主题 →</span></button><button id="specialReviewBtn" type="button">↻ 专项复习 <span>选择主题 →</span></button></div>
-
+      </div>
+      <section id="chartDrawer" class="daily-card-stats" aria-hidden="true" aria-labelledby="chartDrawerTitle" inert>
+        <div class="daily-stats-heading">
+          <button id="closeChartDrawer" class="card-arrow card-arrow-back" type="button" aria-label="返回今日学习计划" title="返回学习计划"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button>
+          <div class="daily-stats-heading-title"><span class="small-cap">YOUR LEARNING JOURNAL</span><h2 id="chartDrawerTitle">学习统计</h2></div>
+          <select id="chartRange" class="daily-stats-range" aria-label="统计图时间范围"><option value="7">近7天</option><option value="14" selected>近14天</option><option value="30">近30天</option><option value="90">近90天</option></select>
+        </div>
+        <div class="chart-overview" aria-label="累计学习成果">
+          <div><small>累计记录</small><strong id="chartLearnedTotal">0</strong></div>
+          <div><small>已掌握</small><strong id="chartMasteredTotal">0</strong></div>
+          <div><small>本期完成</small><strong id="chartPeriodTotal">0</strong></div>
+        </div>
+        <div class="chart-legend" aria-label="柱状图图例"><span><i class="legend-learn"></i>新学</span><span><i class="legend-review"></i>复习</span><span><i class="legend-legacy"></i>旧版记录</span></div>
+        <div class="chart-scroll" aria-label="可横向滚动查看不同日期"><div id="dailyChart" class="daily-chart" role="img" aria-label="逐日学习和复习次数柱状图"></div></div>
+        <p id="chartEmpty" class="chart-empty hidden">暂无记录</p>
+      </section>
     </div>
   </section>
 
@@ -95,7 +117,7 @@
     </div>
 
     <section id="librarySection" class="library-section hidden">
-      <div class="library-head"><div><p class="eyebrow">THE EXPRESSION LIBRARY</p><h2>按主题建立你的观点库</h2><p>先选择主题进入独立分区。每个主题显示总表达数、已学习数与已掌握数；进入后还可按表达用途继续整理。</p></div><div class="library-count"><strong id="libraryCount">600</strong><span>条表达</span></div></div>
+      <div class="library-head"><div><p class="eyebrow">THE EXPRESSION LIBRARY</p><h2>按主题建立你的观点库</h2><p>先选择主题进入独立分区。每个主题显示总表达数、已学习数与已掌握数；进入后还可按表达用途继续整理。</p></div><div class="library-count"><strong id="libraryCount">600</strong><span>条</span></div></div>
       <div class="library-toolbar">
         <label>主题<select id="libraryCategoryFilter"><option value="all">全部主题</option></select></label>
         <label>表达用途<select id="libraryTypeFilter"><option value="all">全部用途</option></select></label>
@@ -121,30 +143,7 @@
   </div>
   <section class="source-note"><div class="source-icon">i</div><div><b>词库与例句说明</b><p>中文释义与核心表达以你上传的《浓缩版观点库（短时间备考同学适用）》为基础；少数明显不自然的英文搭配已做轻度修订。所有例句均已按话题重新编辑，用来展示核心表达的用法、条件或作用机制，并非声称来自 PDF 原文或真实语料库。表达是否适用仍需结合具体题目的对象、因果关系与语境判断，不建议机械套用。</p></div></section>
 </main>
-  <!-- Separate right-side panel: kept outside the green card so it never changes the homepage layout. -->
-  <div id="chartDrawer" class="chart-drawer" aria-hidden="true" inert>
-    <div id="chartBackdrop" class="chart-drawer-backdrop" aria-hidden="true"></div>
-      <aside id="dailyChartPanel" class="daily-chart-panel" role="dialog" aria-modal="true" aria-labelledby="chartDrawerTitle" tabindex="-1">
-        <div class="chart-drawer-heading">
-          <div><p class="eyebrow">YOUR LEARNING JOURNAL</p><h2 id="chartDrawerTitle">学习统计</h2><p>每天的坚持，都会留下记录。</p></div>
-          <button id="closeChartDrawer" class="chart-drawer-close" type="button" aria-label="关闭学习统计" title="关闭统计面板">×</button>
-        </div>
-        <div class="chart-panel-head"><strong>每日学习记录</strong><label class="chart-range-label" for="chartRange">时间范围 <select id="chartRange" aria-label="统计图时间范围"><option value="7">近7天</option><option value="14" selected>近14天</option><option value="30">近30天</option><option value="90">近90天</option></select></label></div>
-        <div class="chart-overview" aria-label="累计学习成果">
-          <div><small>累计有记录</small><strong id="chartLearnedTotal">0</strong><span>条表达</span></div>
-          <div><small>已掌握</small><strong id="chartMasteredTotal">0</strong><span>条表达</span></div>
-          <div><small>本期完成</small><strong id="chartPeriodTotal">0</strong><span>次按日通过记录</span></div>
-        </div>
-        <div class="chart-legend" aria-label="柱状图图例"><span><i class="legend-learn"></i>新学</span><span><i class="legend-review"></i>复习</span><span><i class="legend-legacy"></i>旧版未分类</span></div>
-        <div class="chart-scroll" aria-label="可横向滚动查看不同日期"><div id="dailyChart" class="daily-chart" role="img" aria-label="逐日新学、复习与旧版未分类的完成记录柱状图"></div></div>
-        <p id="chartTotal" class="chart-totals">近14天</p>
-        <p id="chartEmpty" class="chart-empty hidden"></p>
-        <p id="chartLegacyNote" class="chart-legacy-note hidden"></p>
-        <p class="chart-help">每条表达在同一模式下，当天首次正确拼写记为 1 条；柱顶是当天的合计。可悬停或点按日期查看详情，长时间范围可左右滑动。</p>
-      </aside>
-  </div>
-
 <footer><span>IELTS WRITING LAB</span><span>准确拼写 · 语境学习 · 间隔复习</span></footer>
-<script src="app.js"></script>
+<script src="app.js?v=18-card-flip-20261022"></script>
 </body>
 </html>
