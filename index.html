@@ -16,32 +16,35 @@
 <main id="top">
   <section class="hero">
     <div class="hero-copy"><p class="eyebrow">YOUR IELTS WRITING TOOLKIT</p><h1>别只是看懂表达。<br><em>练到需要时能想起来。</em></h1><p class="hero-desc">新表达先看中文、猜想答案，再结合英文例句理解用法，随后隐藏答案拼写一次；复习时直接独立拼写。把观点、原因和结果，练成考场上能准确写出的语言。</p>
-      <div class="hero-pills"><span>600 条写作表达</span><span>12 个话题主题</span><span>到期复习</span><span>新表达学一次 · 复习正确一次即掌握</span></div>
+      <div class="hero-pills"><span>600 条写作表达</span><span>12 个话题主题</span><span>智能间隔复习</span><span>新表达学一次 · 复习正确一次即掌握</span></div>
     </div>
     <div class="daily-card">
-      <div class="daily-head"><span class="small-cap">TODAY'S PLAN</span><span class="calendar-icon">✳</span></div>
+      <div class="daily-head"><span class="small-cap">TODAY'S PLAN</span><button id="chartToggle" class="chart-toggle" type="button" aria-controls="dailyChartPanel" aria-expanded="false" title="查看每日学习统计" aria-label="查看每日学习统计"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 20V13M10 20V7M16 20V11M22 20V4"/></svg></button></div>
       <div class="daily-number"><strong id="todayDone">0</strong><span>/ <b id="todayGoalLabel">10</b> 条</span></div>
       <div class="progress-track"><span id="dailyProgress"></span></div>
       <div class="daily-foot"><span id="dailyHint">今天还没开始，先学几条。</span></div>
       <div class="study-plan-selectors"><label>新表达每组<select id="dailyGoal" aria-label="每组新表达数量"><option value="5">5 条</option><option value="10" selected>10 条</option><option value="15">15 条</option><option value="20">20 条</option><option value="30">30 条</option></select></label><label>复习每组<select id="reviewBatchSize" aria-label="每组复习数量"><option value="5">5 条</option><option value="10" selected>10 条</option><option value="15">15 条</option><option value="20">20 条</option><option value="30">30 条</option></select></label></div>
-      <div class="daily-actions"><button id="startLearnBtn" class="primary-button">开始新表达 <span>→</span></button><button id="startReviewBtn" class="secondary-button">复习到期 <b id="duePill">0</b></button></div>
+      <div class="daily-actions"><button id="startLearnBtn" class="primary-button">开始新表达 <span>→</span></button><button id="startReviewBtn" class="secondary-button"><span class="review-action-text">复习到期</span> <b id="duePill">0</b></button></div>
+      <div class="daily-special-actions"><button id="specialLearnBtn" type="button">＋ 专项学习 <span>选择主题 →</span></button><button id="specialReviewBtn" type="button">↻ 专项复习 <span>选择主题 →</span></button></div>
+      <div id="dailyChartPanel" class="daily-chart-panel hidden"><div class="chart-panel-head"><strong>每日学习记录</strong><span id="chartTotal">近14天</span></div><div class="chart-legend"><span><i class="legend-learn"></i>新表达</span><span><i class="legend-review"></i>间隔复习</span></div><div id="dailyChart" class="daily-chart" role="img" aria-label="近十四天逐日新表达和复习完成数量的双柱图"></div><p id="chartLegacyNote" class="chart-legacy-note hidden"></p><p class="chart-help">每条表达在同一模式下当天首次拼写通过记为 1 条；悬停柱形可看具体日期。</p></div>
     </div>
   </section>
 
   <section class="stats-row" aria-label="学习统计">
-    <div class="stat-card"><span class="stat-icon mint">↻</span><div><small>待复习</small><strong id="dueCount">0</strong><span>该重新回忆</span></div></div>
-    <div class="stat-card"><span class="stat-icon butter">✓</span><div><small>已掌握</small><strong id="masteredCount">0</strong><span>复习拼写正确一次</span></div></div>
+    <div class="stat-card"><span class="stat-icon mint">↻</span><div><small>待复习</small><strong id="dueCount">0</strong><span>到期后优先复习</span></div></div>
+    <div class="stat-card"><span class="stat-icon butter">✓</span><div><small>已掌握</small><strong id="masteredCount">0</strong><span>仍会定期复习</span></div></div>
     <div class="stat-card"><span class="stat-icon lilac">◌</span><div><small>尚未学习</small><strong id="newCount">600</strong><span>等待你来解锁</span></div></div>
     <div class="stat-card"><span class="stat-icon peach">↗</span><div><small>总进度</small><strong id="overallProgress">0%</strong><span id="reviewedCount">0 条有记录</span></div></div>
   </section>
 
   <section id="workspaceSection" class="workspace">
-    <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">新表达和间隔复习均按固定组练习；全组拼写正确后再进入下一组。核对后可在输入框下方对照答案与例句。</p></div>
+    <div class="section-head"><div><p class="eyebrow">STUDY SPACE</p><h2>今天想怎么练？</h2></div><p class="head-note">新表达与复习保持固定组，全部正确后再进入下一组；系统根据错误情况调整复习间隔，已掌握的表达也会定期回顾。</p></div>
     <nav class="mode-tabs" aria-label="学习模式">
       <button class="mode-tab active" data-mode="learn"><span>01</span>新表达</button>
       <button class="mode-tab" data-mode="review"><span>02</span>间隔复习</button>
       <button class="mode-tab" data-mode="browse"><span>03</span>表达总库</button>
     </nav>
+    <div class="special-shortcuts"><span id="scopeStatus">当前为全库学习／复习，也可以选择单一主题进行专项训练。</span><div><button id="workspaceSpecialLearnBtn" type="button">专项学习 · 选择主题</button><button id="workspaceSpecialReviewBtn" type="button">专项复习 · 选择主题</button></div></div>
     <div class="content-layout">
       <aside class="filters-panel">
         <div class="filter-title"><span>⌕</span><h3>筛选学习范围</h3></div>
@@ -86,7 +89,7 @@
           <div id="ratingArea" class="rating-area hidden"><p>掌握判定只依据拼写核对结果，不再通过主观评级增加掌握次数。</p></div>
         </article>
 
-        <div id="sessionDone" class="session-done hidden"><div class="done-stamp">✓</div><p class="small-cap">SESSION COMPLETE</p><h2>这一组完成了。</h2><p id="doneSummary">你完成了本轮学习。</p><div class="done-actions"><button id="doneReviewBtn" class="primary-button">复习到期表达 →</button><button id="doneNewBtn" class="secondary-button">再学一组</button></div></div>
+        <div id="sessionDone" class="session-done hidden"><div class="done-stamp">✓</div><p class="small-cap">SESSION COMPLETE</p><h2>这一组完成了。</h2><p id="doneSummary">你完成了本轮学习。</p><div class="done-metrics"><div><small>有效练习时长</small><strong id="doneDuration">0秒</strong></div><div><small>通过表达</small><strong id="doneExpressionsCount">0</strong></div><div><small>拼写尝试</small><strong id="doneAttempts">0</strong></div><div><small>拼写错误</small><strong id="doneMistakes">0</strong></div></div><div class="done-list-wrap"><div class="done-list-title">本轮练过的表达 <span>全部拼写正确</span></div><ol id="doneExpressionList" class="done-expression-list"></ol></div><div class="done-actions"><button id="doneReviewBtn" class="primary-button">复习到期表达 →</button><button id="doneNewBtn" class="secondary-button">再学一组</button></div></div>
         <div class="card-navigation"><button id="prevBtn" class="nav-button" disabled>← 上一条</button><div class="queue-progress"><span id="queueProgress"></span></div><button id="nextBtn" class="nav-button" disabled>下一条 →</button></div>
       </section>
     </div>
@@ -108,6 +111,14 @@
     </section>
   </section>
 
+  <div id="topicPicker" class="topic-picker hidden" role="dialog" aria-modal="true" aria-labelledby="topicPickerTitle" aria-describedby="topicPickerDesc" tabindex="-1">
+    <div id="topicPickerBackdrop" class="topic-picker-backdrop"></div>
+    <div class="topic-picker-panel">
+      <div class="topic-picker-head"><div><p class="eyebrow">FOCUS BY TOPIC</p><h2 id="topicPickerTitle">选择专项学习主题</h2><p id="topicPickerDesc">本次只练所选主题；所有进度与全库学习和复习共用。</p></div><button id="closeTopicPicker" class="topic-picker-close" type="button" aria-label="关闭主题选择">×</button></div>
+      <div id="topicPickerGrid" class="topic-picker-grid"></div>
+      <p class="topic-picker-tip">每组数量沿用首页设置。未完成的专项组会被保留；已通过的表达仍将进入全库间隔复习。</p>
+    </div>
+  </div>
   <section class="source-note"><div class="source-icon">i</div><div><b>词库与例句说明</b><p>中文释义与核心表达以你上传的《浓缩版观点库（短时间备考同学适用）》为基础；少数明显不自然的英文搭配已做轻度修订。所有例句均已按话题重新编辑，用来展示核心表达的用法、条件或作用机制，并非声称来自 PDF 原文或真实语料库。表达是否适用仍需结合具体题目的对象、因果关系与语境判断，不建议机械套用。</p></div></section>
 </main>
 <footer><span>IELTS WRITING LAB</span><span>准确拼写 · 语境学习 · 间隔复习</span></footer>

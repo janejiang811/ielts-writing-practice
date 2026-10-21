@@ -4,16 +4,30 @@ const LEGACY_STORAGE_KEY = 'ieltsWritingLab.v2.progress';
 const CATEGORY_ORDER = ['教育','科技','社会','政府','媒体','国际','犯罪','文化','旅游','环境','健康','工作'];
 const TYPE_ORDER = ['万能论证短句','观点类','积极结果','消极结果','原因分析'];
 const TYPE_LABELS = {'万能论证短句':'完整论证句','观点类':'观点与措施','积极结果':'积极结果','消极结果':'消极结果','原因分析':'原因分析'};
-const INTERVAL_DAYS = [0.25,1,3,7,14,30];
+// Deliberately compact spaced-repetition plan for writing-production recall.
+// First learning pass: ~12h; first successful review: ~1 day; mature items:
+// never more than ~30 days before another review, with error-sensitive shortening.
+// These are practical scheduling stages, not a literal Ebbinghaus equation.
+const INTERVAL_DAYS = [0.25,0.5,1,2,3,5,7,10,14,21,30];
+const OLD_INTERVAL_DAYS = [0.25,1,3,7,14,30,60,90,120]; // v12, migration only
+const MAX_STAGE = INTERVAL_DAYS.length-1;
+const REVIEW_DAY_MS = 86400000;
+const REVIEW_SCHEDULE_VERSION = 13;
+const TEN_MINUTES = 10*60*1000;
 const SESSION_LIMITS = [5,10,15,20,30];
 function validBatchSize(n){const size=Number(n);return SESSION_LIMITS.includes(size)?size:10;}
 let entries = [];
-let state = { progress:{}, settings:{dailyGoal:10,reviewBatchSize:10}, dailyStats:{}, activeBatches:{} };
+let state = { progress:{}, settings:{dailyGoal:10,reviewBatchSize:10}, dailyStats:{}, activeBatches:{}, schemaVersion:13 };
+let timerStartedAt = null;
 let mode = 'idle';
 let queue = [];
 let cursor = 0;
 let sessionBatch = null; // fixed membership until every entry has passed one spelling check
 let sessionIsSingle = false; // ad-hoc library practice must not replace a saved group
+let sessionScope = 'all'; // all topics, or one category (e.g. 教育)
+let sessionBatchKey = null; // group namespace: learn, review, learn:教育, review:教育
+let topicPickerMode = 'learn';
+let topicPickerPreviousFocus = null;
 let revealed = false;
 let checked = false;
 let typedCorrect = false;
@@ -23,31 +37,102 @@ let selectedType = 'all';
 let searchText = '';
 let learningStage = 'prompt'; // prompt → example → typing → checked (learn); typing → checked (review)
 
+// Backward compatibility: keep v5-v11 progress, including reviews and future due dates.
+// The v2 store is merged only for IDs absent from v3. Old spelling errors were not
+// recorded separately; never fabricate historical error counts.
+function sanitizeProgress(p,fromLegacy=false){
+  if(!p || typeof p!=='object')return null;
+  const now=Date.now();
+  const out={...p};
+  out.level=Math.max(0,Math.min(MAX_STAGE,Number.isFinite(Number(p.level))?Math.floor(Number(p.level)):0));
+  out.reviews=Math.max(0,Number(p.reviews)||0);
+  out.firstAt=Number(p.firstAt)||Number(p.lastAt)||now;
+  out.lastAt=Number(p.lastAt)||out.firstAt;
+  out.dueAt=Number.isFinite(Number(p.dueAt)) && Number(p.dueAt)>0?Number(p.dueAt):now;
+  if(fromLegacy){out.level=0;out.dueAt=now;out.lastRating='needs-spelling-verification';out.correctRounds=0;}
+  // Attempts and errors after v12 upgrade are the only fully reliable counts.
+  out.trackedAttempts=Math.max(0,Number(p.trackedAttempts)||0);
+  out.trackedCorrect=Math.max(0,Number(p.trackedCorrect)||0);
+  out.trackedErrors=Math.max(0,Number(p.trackedErrors)||0);
+  out.recentChecks=Array.isArray(p.recentChecks)?p.recentChecks.filter(v=>v===0||v===1).slice(-20):[];
+  out.errorsSincePass=Math.max(0,Number(p.errorsSincePass)||0);
+  out.streak=Math.max(0,Number(p.streak)||0);
+  return out;
+}
+// Importing an older JSON backup should not restore a long v12 wait.
+// Shorten ONLY old due dates, never push a review later or discard errors.
+// v12's measured intervalDays reflects its actual difficulty multiplier;
+// preserve that multiplier when translating the base interval to v13.
+function migrateReviewSchedule(p){
+  if(Number(p.reviewScheduleVersion)>=REVIEW_SCHEDULE_VERSION)return p;
+  if(p.lastRating==='known' && p.level>=1 && Number.isFinite(p.lastAt)){
+    const base=INTERVAL_DAYS[Math.min(MAX_STAGE,p.level)];
+    const oldBase=OLD_INTERVAL_DAYS[Math.min(OLD_INTERVAL_DAYS.length-1,p.level)];
+    const oldInterval=Number(p.intervalDays);
+    let days;
+    if(Number.isFinite(oldInterval) && oldInterval>0 && oldBase>0){
+      const oldMultiplier=Math.min(1.1,Math.max(.05,oldInterval/oldBase));
+      days=Math.max(1/6,Math.min(30,base*oldMultiplier));
+    }else{
+      days=intervalForPass(p.level,p,0);
+    }
+    const earlierDue=p.lastAt+Math.round(days*REVIEW_DAY_MS);
+    p.dueAt=Math.min(p.dueAt,earlierDue);
+    if(p.dueAt===earlierDue)p.intervalDays=days;
+  }
+  p.reviewScheduleVersion=REVIEW_SCHEDULE_VERSION;
+  return p;
+}
+function normalizeDailyStats(ds){
+  const result=ds&&typeof ds==='object'?{...ds}:{};
+  result.doneIds=Array.isArray(result.doneIds)?[...new Set(result.doneIds)]:[];
+  result.learnIds=Array.isArray(result.learnIds)?[...new Set(result.learnIds)]:[];
+  result.reviewIds=Array.isArray(result.reviewIds)?[...new Set(result.reviewIds)]:[];
+  result.ratings=Math.max(0,Number(result.ratings)||0);
+  result.learnAttempts=Math.max(0,Number(result.learnAttempts)||0);
+  result.reviewAttempts=Math.max(0,Number(result.reviewAttempts)||0);
+  result.learnErrors=Math.max(0,Number(result.learnErrors)||0);
+  result.reviewErrors=Math.max(0,Number(result.reviewErrors)||0);
+  return result;
+}
+function repairAndMergeProgress(){
+  if(!state.progress||typeof state.progress!=='object')state.progress={};
+  try{
+    const legacy=JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY)||'null');
+    if(legacy?.progress && typeof legacy.progress==='object'){
+      for(const [id,p] of Object.entries(legacy.progress)){
+        if(!(id in state.progress))state.progress[id]=sanitizeProgress(p,true);
+      }
+    }
+  }catch(e){console.warn('Legacy data could not be inspected.',e);}
+  for(const [id,p] of Object.entries(state.progress)){
+    const clean=sanitizeProgress(p);if(clean)state.progress[id]=migrateReviewSchedule(clean);else delete state.progress[id];
+  }
+  const cleanStats={};
+  for(const [day,ds] of Object.entries(state.dailyStats||{}))cleanStats[day]=normalizeDailyStats(ds);
+  state.dailyStats=cleanStats;
+  if(!state.activeBatches||typeof state.activeBatches!=='object')state.activeBatches={};
+  state.schemaVersion=13;
+}
 function safeReadState(){
   try {
-    const currentRaw=localStorage.getItem(STORAGE_KEY);
-    const legacyRaw=localStorage.getItem(LEGACY_STORAGE_KEY);
-    const saved=JSON.parse(currentRaw || legacyRaw || '{}');
-    if(saved && typeof saved === 'object') state = {...state, ...saved, progress:saved.progress || {}, settings:{...state.settings,...(saved.settings||{})},dailyStats:saved.dailyStats||{}};
-    // Previous versions allowed subjective self-rating. Preserve their history and settings,
-    // but require every previously studied item to re-earn mastery through verified spelling.
-    if(!currentRaw && legacyRaw){
-      const now=Date.now();
-      for(const p of Object.values(state.progress)){
-        if(!p || typeof p!=='object')continue;
-        p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';
-      }
-      saveState();
+    const raw=localStorage.getItem(STORAGE_KEY);
+    const legacy=localStorage.getItem(LEGACY_STORAGE_KEY);
+    const saved=JSON.parse(raw||legacy||'{}');
+    if(saved&&typeof saved==='object'){
+      state={...state,...saved,progress:{...(saved.progress||{})},settings:{...state.settings,...(saved.settings||{})},dailyStats:saved.dailyStats||{},activeBatches:saved.activeBatches||{}};
+      // v2 ratings are not verified spelling; preserve records but invite verification.
+      if(!raw&&legacy)for(const [id,p] of Object.entries(state.progress))state.progress[id]=sanitizeProgress(p,true);
     }
-  } catch(e) { console.warn('Learning data could not be loaded.',e); }
-  const today = dateKey();
-  if(!state.dailyStats[today]) state.dailyStats[today] = {doneIds:[],ratings:0};
-  if(!Array.isArray(state.dailyStats[today].doneIds)) state.dailyStats[today].doneIds=[];
+  }catch(e){console.warn('Learning data could not be loaded.',e);}
+  repairAndMergeProgress();
+  state.dailyStats[dateKey()]=normalizeDailyStats(state.dailyStats[dateKey()]);
+  saveState();
 }
 function saveState(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch(e){console.warn('Could not save learning progress.',e);}}
 function dateKey(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 function shuffle(list){const out=[...list];for(let i=out.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[out[i],out[j]]=[out[j],out[i]];}return out;}
-function todayStats(){return state.dailyStats[dateKey()] || {doneIds:[],ratings:0};}
+function todayStats(){return normalizeDailyStats(state.dailyStats[dateKey()]);}
 function isDue(e){const p=state.progress[e.id];return !!p && Number(p.dueAt||0) <= Date.now();}
 function isMastered(e){const p=state.progress[e.id];return !!p && Number(p.level||0)>=2;}
 function getFiltered(){
@@ -61,6 +146,63 @@ function categoryProgress(category){const pool=categoryEntries(category),learned
 function hasLibraryNarrowing(){return selectedCategory!=='all'||selectedType!=='all'||!!searchText.trim();}
 function getDue(list=entries){return list.filter(isDue);}
 function getUnseen(list=entries){return list.filter(e=>!state.progress[e.id]);}
+// Every studied item remains eligible for review for life. Due items are first;
+// when none (or too few) are due, the nearest future reviews provide optional
+// consolidation. This does not change their saved schedule until actually attempted.
+function reviewCandidates(pool,limit){
+  const due=pool.filter(isDue).sort((a,b)=>(Number(state.progress[a.id].dueAt)||0)-(Number(state.progress[b.id].dueAt)||0));
+  const future=pool.filter(e=>state.progress[e.id]&&!isDue(e)&&Date.now()-Number(state.progress[e.id].lastAt||0)>=12*3600000)
+    .sort((a,b)=>(Number(state.progress[a.id].dueAt)||Infinity)-(Number(state.progress[b.id].dueAt)||Infinity));
+  return [...due,...future].slice(0,limit);
+}
+function intervalForPass(level,old,errorsInGroup){
+  const history=Array.isArray(old.recentChecks)?old.recentChecks:[];
+  const recent=history.slice(-8);
+  const recentErrors=recent.filter(x=>x===0).length;
+  const reliableRatio=recent.length>=3?recentErrors/recent.length:0;
+  let multiplier=1-Math.min(.60,reliableRatio*.75);
+  // A weak card is revisited sooner even if it finally passed its fixed group.
+  if(errorsInGroup>=3)multiplier=Math.min(multiplier,.18);
+  else if(errorsInGroup===2)multiplier=Math.min(multiplier,.3);
+  else if(errorsInGroup===1)multiplier=Math.min(multiplier,.55);
+  if(old.streak>=3&&recent.length>=5&&recentErrors===0)multiplier=Math.min(1.1,multiplier*1.1);
+  // Bound successful passes to at least 4h and at most 30 days.
+  return Math.max(1/6,Math.min(30,INTERVAL_DAYS[Math.min(MAX_STAGE,level)]*multiplier));
+}
+function formatDuration(ms){
+  const sec=Math.max(0,Math.round(ms/1000)),m=Math.floor(sec/60),h=Math.floor(m/60);
+  if(h)return `${h}小时${m%60}分`;
+  return m?`${m}分${String(sec%60).padStart(2,'0')}秒`:`${sec}秒`;
+}
+function pauseSessionTimer(){
+  if(timerStartedAt===null)return;
+  if(sessionBatch && (mode==='learn'||mode==='review')){
+    sessionBatch.activeMs=Math.max(0,Number(sessionBatch.activeMs)||0)+Math.max(0,performance.now()-timerStartedAt);
+    if(!sessionIsSingle && sessionBatchKey && state.activeBatches?.[sessionBatchKey])state.activeBatches[sessionBatchKey]=sessionBatch;
+    saveState();
+  }
+  timerStartedAt=null;
+}
+function resumeSessionTimer(){if(timerStartedAt===null&&sessionBatch&&queue.length&&['learn','review'].includes(mode)&&!document.hidden)timerStartedAt=performance.now();}
+function createBarChart(){
+  const days=14;
+  const stats=Array.from({length:days},(_,i)=>{
+    const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-(days-1-i));
+    const data=normalizeDailyStats(state.dailyStats[dateKey(d)]);
+    return {date:dateKey(d),day:`${d.getMonth()+1}/${d.getDate()}`,learn:data.learnIds.length,review:data.reviewIds.length,unknown:Math.max(0,data.doneIds.filter(id=>!data.learnIds.includes(id)&&!data.reviewIds.includes(id)).length)};
+  });
+  const tallest=Math.max(1,...stats.map(v=>Math.max(v.learn,v.review)));
+  $('dailyChart').innerHTML=stats.map(v=>{
+    const title=`${v.date}：新表达 ${v.learn} 条，复习 ${v.review} 条${v.unknown?`，旧版未分类 ${v.unknown} 条`:''}`;
+    const height=(n)=>n?`${Math.max(5,n/tallest*100)}%`:'0%';
+    return `<div class="chart-day" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><div class="chart-bars"><span class="chart-learn" style="height:${height(v.learn)}"></span><span class="chart-review" style="height:${height(v.review)}"></span></div><span class="chart-date">${escapeHtml(v.day)}</span>${v.unknown?'<i class="chart-old-dot" aria-label="含旧版未分类记录"></i>':''}</div>`;
+  }).join('');
+  const totals=stats.reduce((v,x)=>({learn:v.learn+x.learn,review:v.review+x.review,unknown:v.unknown+x.unknown}),{learn:0,review:0,unknown:0});
+  $('chartTotal').textContent=`近14天 · 新学 ${totals.learn} 条 / 复习 ${totals.review} 条`;
+  $('chartLegacyNote').classList.toggle('hidden',totals.unknown===0);
+  $('chartLegacyNote').textContent=totals.unknown?`另有 ${totals.unknown} 条旧版完成记录未区分学习或复习，已保留，不会虚构分类。`:'';
+}
+
 function fillFilters(){
   const categoryOptions='<option value="all">全部主题</option>'+CATEGORY_ORDER.map(c=>`<option value="${c}">${c}</option>`).join('');
   const typeOptions='<option value="all">全部用途</option>'+TYPE_ORDER.map(t=>`<option value="${t}">${TYPE_LABELS[t]}</option>`).join('');
@@ -76,24 +218,109 @@ function fillFilters(){
 }
 function updateStats(){
   const total=entries.length, reviewed=Object.keys(state.progress).filter(id=>entries.some(e=>e.id===id)).length;
-  const due=getDue().length, mastered=entries.filter(isMastered).length, newCount=getUnseen().length;
+  const waiting=new Set(getDue().map(e=>e.id));
+  const activeReview=state.activeBatches?.review;
+  for(const [key,group] of Object.entries(state.activeBatches||{})){
+    if(key!=='review'&&!key.startsWith('review:'))continue;
+    const passed=new Set(group?.passedIds||[]);
+    for(const id of group?.ids||[])if(!passed.has(id))waiting.add(id);
+  }
+  const due=waiting.size, mastered=entries.filter(isMastered).length, newCount=getUnseen().length;
   const todayCount=todayStats().doneIds.length, goal=Number(state.settings.dailyGoal||10);
   $('todayDone').textContent=todayCount; $('todayGoalLabel').textContent=goal;
   $('dailyProgress').style.width=`${Math.min(100,Math.round(todayCount/goal*100))}%`;
   $('dailyHint').textContent=todayCount>=goal?'今日目标已完成，做得很好。':todayCount===0?'今天还没开始，先学几条。':`再完成 ${Math.max(0,goal-todayCount)} 条，就达成今日目标。`;
-  $('dueCount').textContent=due; $('duePill').textContent=due; $('masteredCount').textContent=mastered;
+  const availableReview=reviewCandidates(getFiltered().filter(e=>!!state.progress[e.id]),600).length;
+  $('dueCount').textContent=due; $('duePill').textContent=due||availableReview; $('masteredCount').textContent=mastered;
   $('newCount').textContent=newCount; $('overallProgress').textContent=`${Math.round(reviewed/Math.max(1,total)*100)}%`;
   $('reviewedCount').textContent=`${reviewed} 条有记录`;
-  updateReviewPlanSummary();
+  $('startReviewBtn').querySelector('.review-action-text').textContent=activeReview?.ids?.length&&activeReview?.passedIds?.length<activeReview.ids.length?'继续复习':due?'复习到期':'提前巩固';
+  createBarChart();updateReviewPlanSummary();
+}
+function batchKeyFor(which,scope='all'){
+  return scope==='all'?which:`${which}:${scope}`;
+}
+function currentReviewBatch(){
+  const key=mode==='review'&&sessionBatchKey?sessionBatchKey:'review';
+  return state.activeBatches?.[key]||null;
+}
+function batchIsUnfinished(batch){return Array.isArray(batch?.ids)&&batch.ids.length>(batch.passedIds||[]).length;}
+function lockedBatchIds(){
+  const locked=new Set();
+  for(const key of Object.keys(state.activeBatches||{})){
+    const group=savedBatch(key);
+    if(group)for(const id of group.ids)locked.add(id);
+  }
+  return locked;
+}
+function topicStatus(category,which){
+  const key=batchKeyFor(which,category);
+  const pending=savedBatch(key);
+  const pool=categoryEntries(category);
+  const locked=lockedBatchIds();
+  const eligible=pool.filter(e=>!locked.has(e.id));
+  const available=which==='learn'?getUnseen(eligible).length:reviewCandidates(eligible.filter(e=>!!state.progress[e.id]),600).length;
+  const due=getDue(pool).length;
+  const held=pool.filter(e=>locked.has(e.id)).length;
+  return {pending,available,due,held};
+}
+function renderTopicPicker(){
+  $('topicPickerTitle').textContent=topicPickerMode==='learn'?'选择专项学习主题':'选择专项复习主题';
+  $('topicPickerDesc').textContent=topicPickerMode==='learn'
+    ?'从一个主题开始学习新表达；学习结果计入总进度，之后自动参加全库随机复习。'
+    :'只复习选中主题中已经学过的表达；到期内容优先，不足时可提前巩固。';
+  $('topicPickerGrid').innerHTML=CATEGORY_ORDER.map((category,index)=>{
+    const p=categoryProgress(category);
+    const status=topicStatus(category,topicPickerMode);
+    const pending=batchIsUnfinished(status.pending);
+    const passed=status.pending?.passedIds?.length||0;
+    const target=status.pending?.ids?.length||0;
+    const info=topicPickerMode==='learn'
+      ?`共 ${p.total} 条 · 已学习 ${p.learned} · 未学习 ${p.remaining}`
+      :`共 ${p.total} 条 · 已学习 ${p.learned} · 到期 ${status.due}`;
+    const foot=pending?`继续本组 ${passed}/${target}`:status.available?(topicPickerMode==='learn'?`可新学 ${status.available} 条`:`可复习 ${status.available} 条`):status.held?`其他未完成组占用 ${status.held} 条`:(topicPickerMode==='learn'?'已学完该主题':'暂无可复习表达');
+    return `<button type="button" class="topic-option ${!pending&&!status.available?'topic-option-empty':''}" data-special-topic="${escapeHtml(category)}" ${!pending&&!status.available?'disabled':''} aria-label="${escapeHtml(category)}类，${escapeHtml(foot)}">
+       <span class="topic-option-head"><strong>${escapeHtml(category)}类</strong><small>${String(index+1).padStart(2,'0')} / ${CATEGORY_ORDER.length}</small></span>
+       <span class="topic-option-meta">${escapeHtml(info)}</span>
+       <span class="topic-option-foot"><span class="${pending?'topic-option-resume':''}">${escapeHtml(foot)}</span><span>→</span></span></button>`;
+  }).join('');
+  $('topicPickerGrid').querySelectorAll('[data-special-topic]').forEach(b=>b.addEventListener('click',()=>{
+    const category=b.dataset.specialTopic;
+    closeTopicPicker(false);
+    startSession(topicPickerMode,null,category);
+    $('workspaceSection').scrollIntoView({behavior:'smooth',block:'start'});
+  }));
+}
+function openTopicPicker(which){
+  pauseSessionTimer();
+  topicPickerMode=which;
+  topicPickerPreviousFocus=document.activeElement;
+  renderTopicPicker();
+  $('topicPicker').classList.remove('hidden');
+  document.body.classList.add('topic-picker-open');
+  $('topicPicker').focus();
+}
+function closeTopicPicker(restoreFocus=true){
+  $('topicPicker').classList.add('hidden');
+  document.body.classList.remove('topic-picker-open');
+  if(restoreFocus&&topicPickerPreviousFocus?.focus)topicPickerPreviousFocus.focus();
+  topicPickerPreviousFocus=null;
+  resumeSessionTimer();
+}
+function updateScopeStatus(){
+  const message=sessionScope==='all'?'当前为全库学习／复习，也可以选择单一主题进行专项训练。':`当前：${sessionScope}类专项${mode==='review'?'复习':'学习'} · 本主题内容与全库进度同步。`;
+  $('scopeStatus').textContent=message;
 }
 function updateReviewPlanSummary(){
-  const active=state.activeBatches?.review;
+  const active=currentReviewBatch();
   if(active?.ids?.length && active.passedIds?.length<active.ids.length){
     $('reviewBatchHint').textContent=`当前组固定 ${active.ids.length} 条 · 已通过 ${active.passedIds.length} 条，全部正确后才能进入下一组`;
     return;
   }
-  const n=getDue(getFiltered()).length, batch=validBatchSize(state.settings.reviewBatchSize);
-  $('reviewBatchHint').textContent=n?`当前筛选下有 ${n} 条到期表达 · 下一组 ${Math.min(n,batch)} 条`:`当前筛选下暂无到期表达 · 每组最多 ${batch} 条`;
+  const base=mode==='review'&&sessionScope!=='all'?categoryEntries(sessionScope):getFiltered();
+  const locked=lockedBatchIds();
+  const pool=base.filter(e=>!locked.has(e.id)),n=getDue(pool).length,studied=pool.filter(e=>!!state.progress[e.id]).length,batch=validBatchSize(state.settings.reviewBatchSize),available=reviewCandidates(pool.filter(e=>!!state.progress[e.id]),600).length;
+  $('reviewBatchHint').textContent=n?`到期 ${n} 条 · 本组最多 ${Math.min(batch,available)} 条（不足时补充旧表达）`:available?`暂无到期表达 · 可提前巩固 ${available} 条旧表达`:studied?'已有学习记录，但暂不适合提前复习（至少间隔 12 小时）':'当前筛选下暂无已学习的表达';
 }
 function setReviewBatchSize(value){
   const size=validBatchSize(value);
@@ -114,7 +341,9 @@ function savedBatch(which){
   const ids=[...new Set(raw.ids.filter(id=>known.has(id)))];
   if(!ids.length){delete state.activeBatches[which];saveState();return null;}
   const passedIds=[...new Set((Array.isArray(raw.passedIds)?raw.passedIds:[]).filter(id=>ids.includes(id)))];
-  state.activeBatches[which]={mode:which,ids,passedIds,startedAt:raw.startedAt||Date.now()};
+  const batchMode=which.startsWith('review')?'review':'learn';
+  const scope=which.includes(':')?which.split(':').slice(1).join(':'):'all';
+  state.activeBatches[which]={...raw,mode:batchMode,scope,ids,passedIds,startedAt:raw.startedAt||Date.now(),activeMs:Math.max(0,Number(raw.activeMs)||0),wrongById:raw.wrongById&&typeof raw.wrongById==='object'?raw.wrongById:{},attemptById:raw.attemptById&&typeof raw.attemptById==='object'?raw.attemptById:{}};
   return state.activeBatches[which];
 }
 function groupPassCount(){return sessionBatch?.passedIds?.length||0;}
@@ -132,27 +361,30 @@ function firstUnpassedFrom(index){
   }
   return -1;
 }
-function startSession(nextMode,oneEntry=null){
+function startSession(nextMode,oneEntry=null,scope='all'){
+  pauseSessionTimer();
+  sessionScope=CATEGORY_ORDER.includes(scope)?scope:'all';
+  sessionBatchKey=(nextMode==='learn'||nextMode==='review')?batchKeyFor(nextMode,sessionScope):null;
   mode=nextMode;revealed=false;checked=false;typedCorrect=false;learningStage='prompt';setModeTab(nextMode==='idle'?'learn':nextMode);
   sessionIsSingle=!!oneEntry;
   sessionBatch=null;
-  const pool=getFiltered();
+  const pool=sessionScope==='all'?getFiltered():categoryEntries(sessionScope);
   if(nextMode==='learn'||nextMode==='review'){
     if(oneEntry){
       // Standalone library practice leaves the saved groups unchanged.
-      sessionBatch={mode:nextMode,ids:[oneEntry.id],passedIds:[],startedAt:Date.now()};
+      sessionBatch={mode:nextMode,scope:sessionScope,ids:[oneEntry.id],passedIds:[],startedAt:Date.now(),activeMs:0,wrongById:{},attemptById:{}};
     }else{
-      sessionBatch=savedBatch(nextMode);
+      sessionBatch=savedBatch(sessionBatchKey);
       if(!sessionBatch){
-        // A failed expression in another unfinished group cannot leak into this one.
-        const locked=new Set(['learn','review'].flatMap(k=>savedBatch(k)?.ids||[]));
+        // A failed expression in ANY unfinished group cannot leak into this one.
+        const locked=lockedBatchIds();
         const eligible=pool.filter(e=>!locked.has(e.id));
         const selected=nextMode==='learn'
           ?shuffle(getUnseen(eligible)).slice(0,validBatchSize(state.settings.dailyGoal))
-          :shuffle(getDue(eligible)).slice(0,validBatchSize(state.settings.reviewBatchSize));
+          :reviewCandidates(eligible.filter(e=>!!state.progress[e.id]),validBatchSize(state.settings.reviewBatchSize));
         if(selected.length){
-          sessionBatch={mode:nextMode,ids:selected.map(e=>e.id),passedIds:[],startedAt:Date.now()};
-          state.activeBatches[nextMode]=sessionBatch;saveState();
+          sessionBatch={mode:nextMode,scope:sessionScope,ids:selected.map(e=>e.id),passedIds:[],startedAt:Date.now(),activeMs:0,wrongById:{},attemptById:{}};
+          state.activeBatches[sessionBatchKey]=sessionBatch;saveState();
         }
       }
     }
@@ -164,21 +396,23 @@ function startSession(nextMode,oneEntry=null){
   $('workspaceSection').classList.toggle('browsing',nextMode==='browse');
   $('studyPanel').classList.toggle('hidden',nextMode==='browse');
   $('reviewBatchBar').classList.toggle('hidden',nextMode!=='review');
+  updateScopeStatus();
   if(nextMode==='browse'){renderLibrary();return;}
   if(!queue.length){
     $('idleState').classList.remove('hidden');$('studyCard').classList.add('hidden');$('sessionDone').classList.add('hidden');
-    $('idleState').querySelector('h2').textContent=nextMode==='learn'?'这一范围暂时没有新表达。':nextMode==='review'?'目前没有到期的表达。':'当前筛选下没有可练习的表达。';
-    $('idleState').querySelector('p:not(.small-cap)').textContent=nextMode==='learn'?'可以切换到“间隔复习”，巩固已经学过的表达；也可以清除筛选，继续扩展学习范围。':nextMode==='review'?'可以先学新表达，或调整筛选范围查看其他到期内容。':'请调整主题、用途或关键词筛选后再试。';
+    $('idleState').querySelector('h2').textContent=nextMode==='learn'?'这一范围暂时没有新表达。':nextMode==='review'?'当前范围没有可复习的表达。':'当前筛选下没有可练习的表达。';
+    $('idleState').querySelector('p:not(.small-cap)').textContent=nextMode==='learn'?'可以切换到“间隔复习”，巩固已经学过的表达；也可以清除筛选，继续扩展学习范围。':nextMode==='review'?'可以先学新表达，或清除筛选查看以前学过的内容。':'请调整主题、用途或关键词筛选后再试。';
     $('revealBtn').classList.add('hidden');$('ratingArea').classList.add('hidden');$('typingNextArea').classList.add('hidden');$('typingBox').classList.add('hidden');$('clozeBox').classList.add('hidden');$('cardPosition').textContent='没有待练习内容';$('queueProgress').style.width='0%';$('prevBtn').disabled=true;$('nextBtn').disabled=true;updateSessionLabel();updateReviewPlanSummary();return;
   }
   const pending=firstUnpassedFrom(0);
   if(pending<0){finishSession();return;}
   cursor=pending;
-  $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();
+  $('idleState').classList.add('hidden');$('sessionDone').classList.add('hidden');$('studyCard').classList.remove('hidden');renderCard();resumeSessionTimer();
   updateReviewPlanSummary();
 }
 function updateSessionLabel(){
-  const labels={learn:`新表达 · 本组 ${queue.length||validBatchSize(state.settings.dailyGoal)} 条`,review:`间隔复习 · 本组 ${queue.length||validBatchSize(state.settings.reviewBatchSize)} 条`,browse:'表达总库'};
+  const prefix=sessionScope==='all'?'':`${sessionScope}类专项 · `;
+  const labels={learn:`${prefix}新表达 · 本组 ${queue.length||validBatchSize(state.settings.dailyGoal)} 条`,review:`${prefix}间隔复习 · 本组 ${queue.length||validBatchSize(state.settings.reviewBatchSize)} 条`,browse:'表达总库'};
   $('sessionLabel').textContent=labels[mode]||'拼写输出';
 }
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
@@ -487,21 +721,47 @@ function describeRegionalSpelling(input, target){
 // the user refreshes before pressing the button to proceed.
 function recordCurrentAttempt(){
   const e=queue[cursor];if(!e||!checked)return;
-  const now=Date.now(),old=state.progress[e.id]||{level:0,reviews:0};
-  let level=Number(old.level||0),dueAt;
-  if(!typedCorrect){
-    level=0;dueAt=now+10*60*1000;
-  }else if(mode==='learn'){
-    level=Math.max(1,level);dueAt=now+INTERVAL_DAYS[Math.min(5,level)]*86400000;
+  const now=Date.now();
+  const old=sanitizeProgress(state.progress[e.id]||{level:0,reviews:0});
+  const passed=!!typedCorrect;
+  const previousErrors=old.errorsSincePass;
+  const recentChecks=[...old.recentChecks,passed?1:0].slice(-20);
+  let level=old.level,dueAt,intervalDays=0,streak=old.streak;
+  if(!passed){
+    level=Math.max(0,level-1);
+    dueAt=now+TEN_MINUTES;
+    streak=0;
   }else{
-    level=Math.min(5,Math.max(2,level+1));dueAt=now+INTERVAL_DAYS[level]*86400000;
+    const noErrorsHere=previousErrors===0;
+    if(mode==='learn')level=Math.max(1,level);
+    else level=Math.min(MAX_STAGE,Math.max(2,level+(noErrorsHere?1:0)));
+    streak=old.streak+1;
+    intervalDays=intervalForPass(level,{...old,recentChecks,streak},previousErrors);
+    dueAt=now+Math.round(intervalDays*86400000);
   }
-  state.progress[e.id]={level,dueAt,lastAt:now,firstAt:old.firstAt||now,reviews:Number(old.reviews||0)+1,lastRating:typedCorrect?'known':'again',correctRounds:level};
-  if(typedCorrect && sessionBatch && !sessionBatch.passedIds.includes(e.id))sessionBatch.passedIds.push(e.id);
-  if(!sessionIsSingle && sessionBatch)state.activeBatches[mode]=sessionBatch;
+  state.progress[e.id]={...old,level,dueAt,lastAt:now,firstAt:old.firstAt||now,
+    reviews:old.reviews+1,lastRating:passed?'known':'again',correctRounds:level,
+    intervalDays,streak,recentChecks,reviewScheduleVersion:REVIEW_SCHEDULE_VERSION,
+    trackedAttempts:old.trackedAttempts+1,trackedCorrect:old.trackedCorrect+(passed?1:0),
+    trackedErrors:old.trackedErrors+(passed?0:1),errorsSincePass:passed?0:previousErrors+1};
+  if(sessionBatch){
+    sessionBatch.attemptById=sessionBatch.attemptById||{};
+    sessionBatch.wrongById=sessionBatch.wrongById||{};
+    sessionBatch.attemptById[e.id]=(Number(sessionBatch.attemptById[e.id])||0)+1;
+    if(!passed)sessionBatch.wrongById[e.id]=(Number(sessionBatch.wrongById[e.id])||0)+1;
+    if(passed&&!sessionBatch.passedIds.includes(e.id))sessionBatch.passedIds.push(e.id);
+  }
+  if(!sessionIsSingle&&sessionBatch&&sessionBatchKey)state.activeBatches[sessionBatchKey]=sessionBatch;
   const ds=todayStats();
-  if(typedCorrect&&!ds.doneIds.includes(e.id))ds.doneIds.push(e.id);
-  ds.ratings=Number(ds.ratings||0)+1;state.dailyStats[dateKey()]=ds;
+  if(passed){
+    if(!ds.doneIds.includes(e.id))ds.doneIds.push(e.id);
+    const name=mode==='learn'?'learnIds':'reviewIds';
+    if(!ds[name].includes(e.id))ds[name].push(e.id);
+  }
+  ds.ratings++;
+  if(mode==='learn'){ds.learnAttempts++;if(!passed)ds.learnErrors++;}
+  else{ds.reviewAttempts++;if(!passed)ds.reviewErrors++;}
+  state.dailyStats[dateKey()]=ds;
   saveState();updateStats();updateGroupPosition();
 }
 function checkTypedAnswer(){
@@ -523,7 +783,9 @@ function checkTypedAnswer(){
     $('typingFeedback').textContent=passMessage+
       (regionalDetail?` 已认可英／美拼写差异：${regionalDetail}（两种拼写均正确）。`:'');
     $('typingFeedback').className='typing-feedback correct';
-    $('typingRoundNote').textContent=mode==='learn'?'本次学习完成。下一次将通过独立拼写进行间隔复习，正确一次即可掌握。':'本次复习完成；系统将按间隔复习计划安排下一次回顾。';
+    const dueDate=new Date(state.progress[e.id].dueAt);
+    const dueText=dueDate.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+    $('typingRoundNote').textContent=mode==='learn'?`本次学习完成；计划在 ${dueText} 再次复习。`:`本次复习通过；下一次计划回顾时间为 ${dueText}。`; 
   }else{
     $('typingFeedback').textContent='这次拼写未匹配标准表达。请对照答案检查词形、搭配和字母顺序。';
     $('typingFeedback').className='typing-feedback incorrect';
@@ -543,17 +805,29 @@ function rateCurrent(rating){
 }
 function finishSession(){
   if(!queue.length||groupPassCount()!==queue.length)return;
+  pauseSessionTimer();
   // Release this saved group only after every selected item has passed.
-  if(!sessionIsSingle && state.activeBatches?.[mode]){
-    delete state.activeBatches[mode];saveState();
+  if(!sessionIsSingle && sessionBatchKey && state.activeBatches?.[sessionBatchKey]){
+    delete state.activeBatches[sessionBatchKey];saveState();
   }
   $('studyCard').classList.add('hidden');$('idleState').classList.add('hidden');$('sessionDone').classList.remove('hidden');$('cardPosition').textContent=`本组 ${queue.length}/${queue.length}`;$('prevBtn').disabled=true;$('nextBtn').disabled=true;$('queueProgress').style.width='100%';
-  const n=queue.length;const learned=todayStats().doneIds.length;
-  $('doneSummary').textContent=`本组 ${n} 条表达已全部通过拼写判定（${n}/${n}）。今天累计正确拼写 ${learned} 条不同表达。`;
-  // Failed attempts of this group are already overwritten by its final passes.
-  const due=getDue(getFiltered()).length;
-  $('doneReviewBtn').textContent=due?`继续复习下一组（剩余 ${due} 条）→`:'查看复习计划 →';
-  $('doneNewBtn').textContent='再学一组';
+  const count=queue.length;
+  const mistakes=Object.values(sessionBatch?.wrongById||{}).reduce((a,n)=>a+(Number(n)||0),0);
+  const attempts=Object.values(sessionBatch?.attemptById||{}).reduce((a,n)=>a+(Number(n)||0),0);
+  const duration=formatDuration(sessionBatch?.activeMs||0);
+  $('doneSummary').textContent=`${sessionScope==='all'?'':`${sessionScope}类专项 · `}本组 ${count} 条表达全部通过拼写判定。以下是本次${mode==='learn'?'学习':'复习'}的完整记录。`;
+  $('doneDuration').textContent=duration;
+  $('doneExpressionsCount').textContent=String(count);
+  $('doneAttempts').textContent=String(attempts);
+  $('doneMistakes').textContent=String(mistakes);
+  $('doneExpressionList').innerHTML=queue.map((e,i)=>{
+    const wrong=Number(sessionBatch?.wrongById?.[e.id])||0;
+    return `<li><div class="done-expression-top"><span class="done-number">${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(e.zh)}</strong><span class="done-mistake ${wrong?'':'clean'}">${wrong?`错 ${wrong} 次`:'一次通过'}</span></div><p>${escapeHtml(e.en)}</p></li>`;
+  }).join('');
+  const nextPool=sessionScope==='all'?getFiltered():categoryEntries(sessionScope);
+  const due=getDue(nextPool).length;
+  $('doneReviewBtn').textContent=sessionScope==='all'?(due?`继续复习下一组（到期 ${due} 条）→`:'继续巩固旧表达 →'):`继续${sessionScope}类专项复习 →`;
+  $('doneNewBtn').textContent=sessionScope==='all'?'再学一组':`继续${sessionScope}类专项学习`;
   updateSessionLabel();updateStats();
 }
 function moveBy(delta){
@@ -631,8 +905,8 @@ function setFilterType(v){selectedType=v;$('typeFilter').value=v;$('libraryTypeF
 function resetFilters(){selectedCategory='all';selectedType='all';searchText='';$('categoryFilter').value='all';$('libraryCategoryFilter').value='all';$('typeFilter').value='all';$('libraryTypeFilter').value='all';$('searchInput').value='';$('librarySearchInput').value='';libraryPage=0;document.querySelectorAll('.quick-filter').forEach(b=>b.classList.remove('selected'));updateFilterCounts();}
 
 function speakCurrent(){const e=queue[cursor];if(!e||$('speakBtn').disabled||!('speechSynthesis'in window)){alert('当前浏览器没有提供语音朗读功能。');return;}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(e.en);utterance.lang='en-US';utterance.rate=.88;window.speechSynthesis.speak(utterance);}
-function exportProgress(){const payload={app:'IELTS Writing Lab',version:3,exportedAt:new Date().toISOString(),state};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ielts-writing-progress-${dateKey()}.json`;a.click();URL.revokeObjectURL(url);}
-function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。旧版本记录不会直接计为拼写掌握。是否继续？');if(!ok)return;const importedProgress={...imported.progress};if(Number(data.version||0)<3){const now=Date.now();for(const p of Object.values(importedProgress)){if(!p||typeof p!=='object')continue;p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';}}state.progress={...state.progress,...importedProgress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};state.activeBatches={...(state.activeBatches||{}),...(imported.activeBatches||{})};saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
+function exportProgress(){const payload={app:'IELTS Writing Lab',version:5,exportedAt:new Date().toISOString(),state};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ielts-writing-progress-${dateKey()}.json`;a.click();URL.revokeObjectURL(url);}
+function importProgressFile(file){if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const data=JSON.parse(reader.result);const imported=data.state||data;if(!imported.progress||typeof imported.progress!=='object')throw new Error('Missing progress');const ok=confirm('导入会与当前学习记录合并；同一条表达以导入文件中的记录为准。旧版本记录不会直接计为拼写掌握。是否继续？');if(!ok)return;const importedProgress={...imported.progress};if(Number(data.version||0)<3){const now=Date.now();for(const p of Object.values(importedProgress)){if(!p||typeof p!=='object')continue;p.level=0;p.correctRounds=0;p.dueAt=now;p.lastRating='needs-spelling-verification';}}state.progress={...state.progress,...importedProgress};state.dailyStats={...state.dailyStats,...(imported.dailyStats||{})};state.settings={...state.settings,...(imported.settings||{})};state.activeBatches={...(state.activeBatches||{}),...(imported.activeBatches||{})};repairAndMergeProgress();state.dailyStats[dateKey()]=normalizeDailyStats(state.dailyStats[dateKey()]);saveState();fillFilters();updateStats();if(mode==='browse')renderLibrary();alert('学习记录已导入。');}catch(e){alert('文件无法识别，请选择本网站导出的 JSON 备份。');}};reader.readAsText(file);}
 
 async function init(){
   try{const response=await fetch('words.json');if(!response.ok)throw new Error('words.json could not load');entries=await response.json();}catch(e){$('idleState').querySelector('h2').textContent='词库没有加载成功。';$('idleState').querySelector('p:not(.small-cap)').textContent='请确认 words.json 和 index.html 位于仓库同一目录，并通过 GitHub Pages 或本地静态服务器打开网站。';console.error(e);return;}
@@ -645,12 +919,22 @@ async function init(){
   $('librarySearchInput').addEventListener('input',e=>{searchText=e.target.value;$('searchInput').value=searchText;libraryPage=0;updateFilterCounts();});
   $('libraryResetBtn').addEventListener('click',resetFilters);
   $('backToTopicsBtn').addEventListener('click',resetFilters);
+  $('chartToggle').addEventListener('click',()=>{const open=$('dailyChartPanel').classList.toggle('hidden')===false;$('chartToggle').setAttribute('aria-expanded',String(open));});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseSessionTimer();else resumeSessionTimer();});
+  window.addEventListener('pagehide',pauseSessionTimer);
   $('dailyGoal').addEventListener('change',e=>{state.settings.dailyGoal=validBatchSize(e.target.value);saveState();updateStats();});
   $('reviewBatchSize').addEventListener('change',e=>setReviewBatchSize(e.target.value));
   $('reviewBatchSizeInline').addEventListener('change',e=>setReviewBatchSize(e.target.value));
+  $('specialLearnBtn').addEventListener('click',()=>openTopicPicker('learn'));
+  $('specialReviewBtn').addEventListener('click',()=>openTopicPicker('review'));
+  $('workspaceSpecialLearnBtn').addEventListener('click',()=>openTopicPicker('learn'));
+  $('workspaceSpecialReviewBtn').addEventListener('click',()=>openTopicPicker('review'));
+  $('closeTopicPicker').addEventListener('click',()=>closeTopicPicker());
+  $('topicPickerBackdrop').addEventListener('click',()=>closeTopicPicker());
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('topicPicker').classList.contains('hidden'))closeTopicPicker();});
   $('startLearnBtn').addEventListener('click',()=>startSession('learn'));$('idleLearnBtn').addEventListener('click',()=>startSession('learn'));
   $('startReviewBtn').addEventListener('click',()=>startSession('review'));$('idleReviewBtn').addEventListener('click',()=>startSession('review'));
-  $('doneReviewBtn').addEventListener('click',()=>startSession('review'));$('doneNewBtn').addEventListener('click',()=>startSession('learn'));
+  $('doneReviewBtn').addEventListener('click',()=>startSession('review',null,sessionScope));$('doneNewBtn').addEventListener('click',()=>startSession('learn',null,sessionScope));
   document.querySelectorAll('.mode-tab').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.mode==='browse'){startSession('browse');}else startSession(b.dataset.mode);}));
   document.querySelectorAll('.quick-filter').forEach(b=>b.addEventListener('click',()=>{setFilterType(selectedType===b.dataset.type?'all':b.dataset.type);if(mode==='browse')renderLibrary();}));
   $('clearFiltersBtn').addEventListener('click',resetFilters);$('revealBtn').addEventListener('click',revealAnswer);$('startTypingBtn').addEventListener('click',beginTyping);
@@ -661,6 +945,6 @@ async function init(){
   $('exportBtn').addEventListener('click',exportProgress);$('importBtn').addEventListener('click',()=>$('importFile').click());$('importFile').addEventListener('change',e=>importProgressFile(e.target.files[0]));
   $('speakBtn').disabled=true;
   // Launch in a calm, ready-to-study state. A card only affects mastery after the learner submits and records a spelling check.
-  mode='idle';queue=[];cursor=0;setModeTab('learn');updateStats();
+  mode='idle';queue=[];cursor=0;setModeTab('learn');updateScopeStatus();updateStats();
 }
 init();
