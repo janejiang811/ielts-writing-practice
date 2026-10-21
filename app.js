@@ -184,23 +184,59 @@ function pauseSessionTimer(){
   timerStartedAt=null;
 }
 function resumeSessionTimer(){if(timerStartedAt===null&&sessionBatch&&queue.length&&['learn','review'].includes(mode)&&!document.hidden)timerStartedAt=performance.now();}
+function showLatestChartDates(){
+  const scroll=$('dailyChart')?.parentElement;
+  if(scroll)scroll.scrollLeft=scroll.scrollWidth;
+}
 function createBarChart(){
-  const days=14;
-  const stats=Array.from({length:days},(_,i)=>{
-    const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()-(days-1-i));
+  // v7-v11 only saved doneIds for a day. Their activity is real, but those
+  // versions did not say whether a successful attempt was learning or review.
+  // Show it as a third, clearly marked historic series instead of hiding it.
+  const allowedRanges=[7,14,30,90];
+  const requested=Number(state.settings.chartDays);
+  const days=allowedRanges.includes(requested)?requested:14;
+  const rangeSelect=$('chartRange');
+  if(rangeSelect && rangeSelect.value!==String(days))rangeSelect.value=String(days);
+  const records=Array.from({length:days},(_,i)=>{
+    const d=new Date();
+    d.setHours(12,0,0,0); // avoid daylight-saving transitions at midnight
+    d.setDate(d.getDate()-(days-1-i));
     const data=normalizeDailyStats(state.dailyStats[dateKey(d)]);
-    return {date:dateKey(d),day:`${d.getMonth()+1}/${d.getDate()}`,learn:data.learnIds.length,review:data.reviewIds.length,unknown:Math.max(0,data.doneIds.filter(id=>!data.learnIds.includes(id)&&!data.reviewIds.includes(id)).length)};
+    const learnSet=new Set(data.learnIds);
+    const reviewSet=new Set(data.reviewIds);
+    const legacySet=new Set(data.doneIds.filter(id=>!learnSet.has(id)&&!reviewSet.has(id)));
+    return {date:dateKey(d),day:`${d.getMonth()+1}/${d.getDate()}`,
+      learn:learnSet.size,review:reviewSet.size,legacy:legacySet.size};
   });
-  const tallest=Math.max(1,...stats.map(v=>Math.max(v.learn,v.review)));
-  $('dailyChart').innerHTML=stats.map(v=>{
-    const title=`${v.date}：新表达 ${v.learn} 条，复习 ${v.review} 条${v.unknown?`，旧版未分类 ${v.unknown} 条`:''}`;
-    const height=(n)=>n?`${Math.max(5,n/tallest*100)}%`:'0%';
-    return `<div class="chart-day" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><div class="chart-bars"><span class="chart-learn" style="height:${height(v.learn)}"></span><span class="chart-review" style="height:${height(v.review)}"></span></div><span class="chart-date">${escapeHtml(v.day)}</span>${v.unknown?'<i class="chart-old-dot" aria-label="含旧版未分类记录"></i>':''}</div>`;
+  const totals=records.reduce((a,v)=>({learn:a.learn+v.learn,review:a.review+v.review,legacy:a.legacy+v.legacy}),{learn:0,review:0,legacy:0});
+  const periodPasses=totals.learn+totals.review+totals.legacy;
+  const maxValue=Math.max(1,...records.map(v=>Math.max(v.learn,v.review,v.legacy)));
+  const chart=$('dailyChart');
+  chart.style.gridTemplateColumns=`repeat(${days},minmax(0,1fr))`;
+  chart.style.minWidth=`${Math.max(350,days*27)}px`;
+  chart.innerHTML=records.map(v=>{
+    const amount=v.learn+v.review+v.legacy;
+    const title=`${v.date}：新学 ${v.learn} 条，复习 ${v.review} 条，旧版未分类 ${v.legacy} 条`;
+    const height=n=>n?`${Math.max(5,n/maxValue*100)}%`:'0%';
+    return `<div class="chart-day" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+      <span class="chart-value${amount?'':' is-empty'}">${amount||'·'}</span>
+      <div class="chart-bars" aria-hidden="true">
+        <span class="chart-learn" style="height:${height(v.learn)}" title="新学 ${v.learn} 条"></span>
+        <span class="chart-review" style="height:${height(v.review)}" title="复习 ${v.review} 条"></span>
+        <span class="chart-legacy" style="height:${height(v.legacy)}" title="旧版未分类 ${v.legacy} 条"></span>
+      </div><span class="chart-date">${escapeHtml(v.day)}</span>
+    </div>`;
   }).join('');
-  const totals=stats.reduce((v,x)=>({learn:v.learn+x.learn,review:v.review+x.review,unknown:v.unknown+x.unknown}),{learn:0,review:0,unknown:0});
-  $('chartTotal').textContent=`近14天 · 新学 ${totals.learn} 条 / 复习 ${totals.review} 条`;
-  $('chartLegacyNote').classList.toggle('hidden',totals.unknown===0);
-  $('chartLegacyNote').textContent=totals.unknown?`另有 ${totals.unknown} 条旧版完成记录未区分学习或复习，已保留，不会虚构分类。`:'';
+  const learnedTotal=entries.filter(e=>!!state.progress[e.id]).length;
+  const masteredTotal=entries.filter(isMastered).length;
+  $('chartLearnedTotal').textContent=learnedTotal;
+  $('chartMasteredTotal').textContent=masteredTotal;
+  $('chartPeriodTotal').textContent=periodPasses;
+  $('chartTotal').textContent=`近${days}天 · 新学 ${totals.learn} / 复习 ${totals.review} / 历史 ${totals.legacy}`;
+  $('chartEmpty').classList.toggle('hidden',periodPasses!==0);
+  $('chartEmpty').textContent=`近${days}天没有可按日绘制的拼写通过记录。已有 ${learnedTotal} 条累计学习记录会保留在上方；可以切换到更长的时间范围。`;
+  $('chartLegacyNote').classList.toggle('hidden',totals.legacy===0);
+  $('chartLegacyNote').textContent=totals.legacy?`其中 ${totals.legacy} 条为旧版按日完成记录，原版本没有区分「新学／复习」，因此用金色柱表示，不会擅自改写历史数据。`:'';
 }
 
 function fillFilters(){
@@ -919,7 +955,8 @@ async function init(){
   $('librarySearchInput').addEventListener('input',e=>{searchText=e.target.value;$('searchInput').value=searchText;libraryPage=0;updateFilterCounts();});
   $('libraryResetBtn').addEventListener('click',resetFilters);
   $('backToTopicsBtn').addEventListener('click',resetFilters);
-  $('chartToggle').addEventListener('click',()=>{const open=$('dailyChartPanel').classList.toggle('hidden')===false;$('chartToggle').setAttribute('aria-expanded',String(open));});
+  $('chartToggle').addEventListener('click',()=>{const open=$('dailyChartPanel').classList.toggle('hidden')===false;$('chartToggle').setAttribute('aria-expanded',String(open));if(open)showLatestChartDates();});
+  $('chartRange').addEventListener('change',e=>{state.settings.chartDays=Number(e.target.value);saveState();createBarChart();showLatestChartDates();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseSessionTimer();else resumeSessionTimer();});
   window.addEventListener('pagehide',pauseSessionTimer);
   $('dailyGoal').addEventListener('change',e=>{state.settings.dailyGoal=validBatchSize(e.target.value);saveState();updateStats();});
