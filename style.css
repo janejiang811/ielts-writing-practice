@@ -151,3 +151,70 @@
 body.topic-picker-open{overflow:hidden}
 @media(max-width:780px){.special-shortcuts{flex-direction:column;align-items:flex-start}.special-shortcuts>div{flex-wrap:wrap}.topic-picker-panel{padding:20px;max-height:90vh}.topic-picker-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:420px){.topic-picker{padding:9px}.topic-picker-panel{padding:17px}.topic-picker-grid{gap:8px}.topic-option{padding:11px}.topic-picker-head h2{font-size:20px}.daily-special-actions button{padding:8px 9px;font-size:10px}.daily-special-actions span{font-size:9px}}
+
+
+/* v16 · independent right-hand learning statistics drawer (no card expansion) */
+body.chart-drawer-open{overflow:hidden}
+.chart-drawer{
+  position:fixed;inset:0;z-index:1500;visibility:hidden;pointer-events:none;
+  transition:visibility 0s linear .32s;
+}
+.chart-drawer.is-open{visibility:visible;pointer-events:auto;transition:visibility 0s linear 0s}
+.chart-drawer-backdrop{
+  position:absolute;inset:0;background:rgba(21,39,28,.43);opacity:0;
+  backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
+  transition:opacity .32s ease;
+}
+.chart-drawer.is-open .chart-drawer-backdrop{opacity:1}
+.chart-drawer .daily-chart-panel{
+  position:absolute;inset:0 0 0 auto;width:min(560px,100vw);height:100vh;height:100dvh;
+  overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+  background:#f8f7f1;color:#273a2f;border:0;border-left:1px solid #e4e5d9;
+  border-radius:22px 0 0 22px;padding:30px 30px 36px;
+  box-shadow:-18px 0 55px rgba(20,41,29,.16);margin:0;z-index:1;
+  transform:translateX(102%);transition:transform .32s cubic-bezier(.22,1,.36,1);
+}
+.chart-drawer.is-open .daily-chart-panel{transform:translateX(0)}
+.chart-drawer-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;margin-bottom:26px}
+.chart-drawer-heading .eyebrow{color:#5a886b;margin-bottom:9px}
+.chart-drawer-heading h2{font-size:30px;font-weight:700;letter-spacing:-.045em;color:#254f3e;margin:0 0 7px;line-height:1.2}
+.chart-drawer-heading p:not(.eyebrow){font-size:12px;color:#809085;margin:0;line-height:1.65}
+.chart-drawer-close{width:36px;height:36px;flex:0 0 36px;display:grid;place-items:center;border:1px solid #e0e5d9;background:#fffefa;color:#44614e;border-radius:11px;font-size:24px;line-height:1;transition:background .15s}
+.chart-drawer-close:hover,.chart-drawer-close:focus-visible{background:#edf3e9}
+.chart-drawer .chart-panel-head{border-top:1px solid #e3e6dc;padding-top:19px;gap:12px}
+.chart-drawer .chart-panel-head strong{font-size:14px;color:#304f3b}
+.chart-drawer .chart-range-label{color:#75867a;font-size:11px}
+.chart-drawer .chart-range-label select{color:#395a44;background:#fffefa;border:1px solid #d9e2d7;border-radius:9px;padding:7px 8px;min-height:32px}
+.chart-drawer .chart-overview{gap:10px;margin:18px 0 22px}
+.chart-drawer .chart-overview>div{background:#fffefa;border:1px solid #e5e9df;border-radius:13px;padding:15px 12px;box-shadow:0 2px 9px rgba(30,60,39,.025)}
+.chart-drawer .chart-overview small{color:#7f8b80;font-size:10px}
+.chart-drawer .chart-overview strong{color:#275e44;font-size:26px;font-family:var(--mono);font-weight:600}
+.chart-drawer .chart-overview span{color:#829185;font-size:10px}
+.chart-drawer .chart-legend{color:#53675a;font-size:11px;gap:10px 16px;margin:10px 0 8px}
+.chart-drawer .chart-legend i{width:9px;height:9px;border-radius:3px}
+.chart-drawer .legend-learn,.chart-drawer .chart-bars .chart-learn{background:#41795c}
+.chart-drawer .legend-review,.chart-drawer .chart-bars .chart-review{background:#a2c9aa}
+.chart-drawer .legend-legacy,.chart-drawer .chart-bars .chart-legacy{background:#d6af73}
+.chart-drawer .chart-scroll{background:#fffefa;border:1px solid #e3e8df;border-radius:14px;padding:20px 12px 15px;scrollbar-color:#a5c1aa transparent}
+.chart-drawer .daily-chart{min-height:206px;margin-top:0;gap:5px}
+.chart-drawer .chart-day{gap:7px}
+.chart-drawer .chart-day .chart-value{color:#355943;font-size:11px}
+.chart-drawer .chart-day .chart-value.is-empty{color:#b8c3b7}
+.chart-drawer .chart-day .chart-bars{height:154px;border-bottom:1px solid #dfe6dc}
+.chart-drawer .chart-day .chart-date{color:#75897b;font-size:10px}
+.chart-drawer .chart-day:focus-visible{outline:2px solid #3f805e;outline-offset:2px}
+.chart-drawer .chart-totals{color:#536b59;font-size:11px;margin-top:15px}
+.chart-drawer .chart-empty{border:1px dashed #cfdbcc;color:#637869;background:#fffefa;font-size:12px;padding:14px}
+.chart-drawer .chart-legacy-note{color:#7c876f;background:#f3f0e6;border-radius:9px;padding:11px 12px;font-size:11px;line-height:1.7;margin-top:15px}
+.chart-drawer .chart-help{color:#879488;font-size:11px;line-height:1.9;margin-top:18px}
+@media(max-width:600px){
+  .chart-drawer .daily-chart-panel{width:100vw;border-radius:0;border-left:0;padding:24px 20px 30px;scrollbar-gutter:auto}
+  .chart-drawer-heading h2{font-size:27px}
+  .chart-drawer .chart-overview{gap:7px}
+  .chart-drawer .chart-overview>div{padding:12px 9px}
+  .chart-drawer .chart-overview strong{font-size:22px}
+  .chart-drawer .chart-panel-head{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){
+  .chart-drawer,.chart-drawer-backdrop,.chart-drawer .daily-chart-panel{transition:none}
+}

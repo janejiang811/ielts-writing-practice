@@ -184,6 +184,44 @@ function pauseSessionTimer(){
   timerStartedAt=null;
 }
 function resumeSessionTimer(){if(timerStartedAt===null&&sessionBatch&&queue.length&&['learn','review'].includes(mode)&&!document.hidden)timerStartedAt=performance.now();}
+// Open/close the dedicated statistics panel without disturbing the study page.
+let chartDrawerReturnFocus=null;
+function openChartDrawer(){
+  const drawer=$('chartDrawer');
+  if(drawer.classList.contains('is-open'))return;
+  chartDrawerReturnFocus=document.activeElement;
+  createBarChart();
+  drawer.inert=false;
+  drawer.removeAttribute('inert');
+  drawer.setAttribute('aria-hidden','false');
+  drawer.classList.add('is-open');
+  document.body.classList.add('chart-drawer-open');
+  $('chartToggle').setAttribute('aria-expanded','true');
+  $('closeChartDrawer').focus();
+  requestAnimationFrame(showLatestChartDates);
+}
+function closeChartDrawer(){
+  const drawer=$('chartDrawer');
+  if(!drawer.classList.contains('is-open'))return;
+  drawer.classList.remove('is-open');
+  drawer.setAttribute('aria-hidden','true');
+  drawer.inert=true;
+  document.body.classList.remove('chart-drawer-open');
+  $('chartToggle').setAttribute('aria-expanded','false');
+  const returnTo=chartDrawerReturnFocus;
+  chartDrawerReturnFocus=null;
+  if(returnTo&&typeof returnTo.focus==='function')returnTo.focus();
+}
+function onChartDrawerKeydown(e){
+  if(!$('chartDrawer').classList.contains('is-open'))return;
+  if(e.key==='Escape'){e.preventDefault();closeChartDrawer();return;}
+  if(e.key!=='Tab')return;
+  const focusable=Array.from($('dailyChartPanel').querySelectorAll('button:not([disabled]),select:not([disabled]),[tabindex="0"]')).filter(node=>node.getClientRects().length);
+  if(!focusable.length)return;
+  const first=focusable[0],last=focusable[focusable.length-1];
+  if(e.shiftKey&&(document.activeElement===first||document.activeElement===$('dailyChartPanel'))){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+}
 function showLatestChartDates(){
   const scroll=$('dailyChart')?.parentElement;
   if(scroll)scroll.scrollLeft=scroll.scrollWidth;
@@ -955,7 +993,10 @@ async function init(){
   $('librarySearchInput').addEventListener('input',e=>{searchText=e.target.value;$('searchInput').value=searchText;libraryPage=0;updateFilterCounts();});
   $('libraryResetBtn').addEventListener('click',resetFilters);
   $('backToTopicsBtn').addEventListener('click',resetFilters);
-  $('chartToggle').addEventListener('click',()=>{const open=$('dailyChartPanel').classList.toggle('hidden')===false;$('chartToggle').setAttribute('aria-expanded',String(open));if(open)showLatestChartDates();});
+  $('chartToggle').addEventListener('click',openChartDrawer);
+  $('closeChartDrawer').addEventListener('click',closeChartDrawer);
+  $('chartBackdrop').addEventListener('click',closeChartDrawer);
+  document.addEventListener('keydown',onChartDrawerKeydown);
   $('chartRange').addEventListener('change',e=>{state.settings.chartDays=Number(e.target.value);saveState();createBarChart();showLatestChartDates();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseSessionTimer();else resumeSessionTimer();});
   window.addEventListener('pagehide',pauseSessionTimer);
